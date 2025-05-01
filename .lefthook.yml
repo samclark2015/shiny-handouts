@@ -3,11 +3,18 @@ pre-commit:
     Freeze UV Dependencies:
       run: uv pip freeze > requirements.txt
       stage_fixed: true
+      glob:
+        - requirements.txt
+        - uv.lock
 
 
 post-merge:
   commands:
     Update UV Dependencies:
       run: uv sync
+      glob:
+        - uv.lock
     Update lefthook:
       run: uv run lefthook install
+      glob:
+        - .lefthook.yml
