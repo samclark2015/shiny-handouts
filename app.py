@@ -151,8 +151,3 @@ async def generate_handout(query, video_path):
         await file_list.update_value()
         ui.update_text("video_file", value="")
         ui.update_text("video_file_upload", value="")
-
-@render.express
-def user_info():
-    f"User: {session.user}"
-    f"Groups: {session.groups}"
