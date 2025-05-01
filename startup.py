@@ -1,4 +1,5 @@
 from pathlib import Path
+import ffmpeg_binaries as ffmpeg
 
 
 intialized = False
@@ -15,5 +16,7 @@ def initialize(data_path: Path):
         data_path.mkdir(parents=True)
         data_path.joinpath("output").mkdir(parents=True)
 
-    
+    ffmpeg.init()
+    ffmpeg.add_to_path()
+
     print("App initialized")
