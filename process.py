@@ -1,6 +1,7 @@
 import asyncio
 import concurrent.futures
 import os
+import shutil
 import urllib.request
 from typing import Callable
 from uuid import uuid4
@@ -62,7 +63,7 @@ class Processor:
             self.video_url,
             self.video_path,
             reporthook=lambda count, bs, ts: self.callback(
-                Progress("download", count * bs, ts)
+                Progress("Downloading", count * bs, ts)
             ),
         )
         return self.video_path
@@ -70,7 +71,7 @@ class Processor:
     async def get_captions(self) -> list[Caption]:
         # delivery_info = self.get_delivery_info(captions=True)
         # return [Caption(cap["Caption"], cap["Time"]) for cap in delivery_info]
-        self.callback(Progress("transcription", 0.5, 1))
+        self.callback(Progress("Transcribing", 0.5, 1))
         return await generate_captions(self.video_path)
 
     def match_frames(self, captions: list[Caption]) -> list[Slide]:
@@ -113,7 +114,7 @@ class Processor:
                 last_frame = frame
                 last_frame_gs = frame_gs
                 cum_captions.clear()
-                self.callback(Progress("frame_processing", idx + 1, len(captions)))
+                self.callback(Progress("Matching Slides", idx + 1, len(captions)))
             cum_captions.append(cap.text)
         return pairs
 
@@ -146,7 +147,7 @@ class Processor:
 
         output: list[Slide] = []
         for idx, pair in enumerate(pairs):
-            self.callback(Progress("ai_processing", idx + 1, len(pairs)))
+            self.callback(Progress("Cleaning Transcript with AI", idx + 1, len(pairs)))
             output.append(await transform(pair))
         return output
 
@@ -164,6 +165,10 @@ class Processor:
         filename = await self.run_in_threadpool(self.write_output, pairs)
         # shutil.rmtree(os.path.join("data", "frames", self.delivery_id))
         return filename
+
+    def abort(self):
+        os.unlink(self.video_path)
+        shutil.rmtree(os.path.join("data", "frames", self.delivery_id))
 
 
 class PanoptoProcessor(Processor):
@@ -212,7 +217,7 @@ class PanoptoProcessor(Processor):
             vidurl,
             self.video_path,
             reporthook=lambda count, bs, ts: self.callback(
-                Progress("download", count * bs, ts)
+                Progress("Downloading", count * bs, ts)
             ),
         )
         return self.video_path

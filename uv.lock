@@ -282,6 +282,22 @@ wheels = [
 ]
 
 [[package]]
+name = "ffmpeg-binaries-compat"
+version = "1.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "patool" },
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/be/28/61aac12684e8a5f845521919aed483bd8e2552c1a8b6fd295bedc5918232/ffmpeg_binaries_compat-1.0.1.tar.gz", hash = "sha256:a2f5501d947ae78cd555d0f8e7a70678bba39f2f0f5fdcc6c1e3b987ffa3aec8", size = 7405 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a5/f6/6eadf5f220077f61e28456c2570c29685ecef44782ab610c27ab9e44703b/ffmpeg_binaries_compat-1.0.1-py3-none-any.whl", hash = "sha256:8905dffd8f3586ab4a844acbc0aa20c7fa7b261b97d93437fecd495944e10e6d", size = 9390 },
+    { url = "https://files.pythonhosted.org/packages/07/17/809b382e160787e557e3858a5a0d7b71502121ec2a11800de5ce2c2c3960/ffmpeg_binaries_compat-1.0.1-py3-none-macosx_10_13_universal2.whl", hash = "sha256:c17f5c6cbd7874cc749df125a268f2d5ab4976c16e29695d43cef92e49a8415d", size = 50288895 },
+    { url = "https://files.pythonhosted.org/packages/79/4c/c69202abc10f7d469fcdc6848bf92b5d18e157d4d9ef60ed09681b6154eb/ffmpeg_binaries_compat-1.0.1-py3-none-manylinux1_x86_64.whl", hash = "sha256:0e5f445e58c466931897c8579032cea9faf74b9aa116affac2a4404bc64b2f30", size = 60256857 },
+    { url = "https://files.pythonhosted.org/packages/2d/24/814b379e247ee521cc8e858961ae403a61510f50e4075e666a5c4d70609f/ffmpeg_binaries_compat-1.0.1-py3-none-win_amd64.whl", hash = "sha256:f0a5407bd771b6d6ce0c97b881159d6c5fa555b0c17955963d046e4cca98b71c", size = 88794436 },
+]
+
+[[package]]
 name = "h11"
 version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
@@ -435,6 +451,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6f/6b/c875b30a1ba490860c93da4cabf479e03f584eba06fe5963f6f6644653d8/lazy_loader-0.4.tar.gz", hash = "sha256:47c75182589b91a4e1a85a136c074285a5ad4d9f39c63e0d7fb76391c4574cd1", size = 15431 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/60/d497a310bde3f01cb805196ac61b7ad6dc5dcf8dce66634dc34364b20b4f/lazy_loader-0.4-py3-none-any.whl", hash = "sha256:342aa8e14d543a154047afb4ba8ef17f5563baad3fc610d7b15b213b0f119efc", size = 12097 },
+]
+
+[[package]]
+name = "lefthook"
+version = "1.11.12"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/16/df/024dd41bbad4ee2e5ed823a4cc9f5c9672d006e5a01bcdfef8c32f4bfe6c/lefthook-1.11.12.tar.gz", hash = "sha256:7b6070d0f3926220b3b44cbbac100762832087592c35618a5e3c5bf41d042e7e", size = 49447800 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/4e/62ec8b46973825c37a11bd74a9d4ad0622451b85ec75f0d3a6fcb9a45101/lefthook-1.11.12-py3-none-any.whl", hash = "sha256:1397bc33beef8f69e9d4f8ad60ee34599a2819803c2e5e2073e4f16780dc6e4d", size = 49691325 },
 ]
 
 [[package]]
@@ -759,6 +784,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/a1/d4/1fc4078c65507b51b96ca8f8c3ba19e6a61c8253c72794544580a7b6c24d/packaging-25.0.tar.gz", hash = "sha256:d443872c98d677bf60f6a1f2f8c1cb748e8fe762d2bf9d3148b5599295b0fc4f", size = 165727 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/20/12/38679034af332785aac8774540895e234f4d07f7545804097de4b666afd8/packaging-25.0-py3-none-any.whl", hash = "sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484", size = 66469 },
+]
+
+[[package]]
+name = "patool"
+version = "4.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ca/22/fe221bd196e2d12e9024a570e9b137244e4270c33bdba9f0525f891f3513/patool-4.0.0.tar.gz", hash = "sha256:c953f651ae1e888d1ae483b67b172a783121e83f12a94f735a147bdca8f5d3a4", size = 2007828 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/06/b5/bad8adaec62faa9b2759d70202ec25a64c8ad0a399071e7526b9c96d70d4/patool-4.0.0-py2.py3-none-any.whl", hash = "sha256:270214b54d6c4a0db70595edae739b6f63841fb093cc06699bc274228f4853b9", size = 86338 },
 ]
 
 [[package]]
@@ -1128,6 +1162,7 @@ dependencies = [
     { name = "chardet" },
     { name = "pillow" },
 ]
+sdist = { url = "https://files.pythonhosted.org/packages/88/69/291a56d8bb177017e6e5421c34baa51b2e9017434c0ca1822e5007e45a26/reportlab-4.4.0.tar.gz", hash = "sha256:a64d85513910e246c21dc97ccc3c9054a1d44370bf8fc1fab80af937814354d5", size = 3597413 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/52/15/4702e132ae36beb8daf3e20a92f166451148c4a89650cc9d3f19b3c66714/reportlab-4.4.0-py3-none-any.whl", hash = "sha256:0a993f1d4a765fcbdf4e26adc96b3351004ebf4d27583340595ba7edafebec32", size = 1953103 },
 ]
@@ -1297,6 +1332,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "dotenv" },
+    { name = "ffmpeg-binaries-compat" },
     { name = "jinja2" },
     { name = "openai" },
     { name = "opencv-python" },
@@ -1308,9 +1344,15 @@ dependencies = [
     { name = "xhtml2pdf" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "lefthook" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "dotenv", specifier = ">=0.9.9" },
+    { name = "ffmpeg-binaries-compat", specifier = ">=1.0.1" },
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "openai", specifier = ">=1.74.0" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
@@ -1321,6 +1363,9 @@ requires-dist = [
     { name = "shiny", specifier = ">=1.4.0" },
     { name = "xhtml2pdf", specifier = ">=0.2.17" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "lefthook", specifier = ">=1.11.12" }]
 
 [[package]]
 name = "six"
