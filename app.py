@@ -1,6 +1,7 @@
 import asyncio
 import pathlib
 import time
+import traceback
 from urllib.parse import parse_qs, urlparse
 
 from shiny import reactive
@@ -59,6 +60,7 @@ with ui.layout_columns(col_widths=[12]):
             ui.a(
                 f"{item.stem} (created {time.strftime('%-m/%-d/%Y %-I:%M %p', time.localtime(item.stat(follow_symlinks=True).st_ctime))})",
                 href=f"data/output/{item.name}",
+                target="_blank",
             )
             for item in file_list()
         ]
@@ -79,9 +81,7 @@ def file_list():
     )
     return files
 
-def get_processor(callback) -> Processor:
-    query = query_params()
-        
+def get_processor(query, video_path, callback) -> Processor:
     if "cookie" in query and "url" in query:
         cookie = query["cookie"][0]
         url = query["url"][0]
@@ -98,21 +98,30 @@ def get_processor(callback) -> Processor:
             callback=callback,
         )
     else:
-        video_path = input.video_file()
-
         if not video_path:
-            video_path = input.video_file_upload()
-            if not video_path:
-                ui.show_notification("Please provide a video file.")
-                return
-            video_path = video_path[0]["datapath"]
+            raise ValueError("No video file provided.")
         processor = Processor(video_path, use_ai=True, callback=callback)
 
     return processor
 
 @reactive.effect
 @reactive.event(input.generate_handout)
-async def generate_handout():
+def handle_generate_handout():
+    if input.video_file():
+        video_path = input.video_file()
+    elif input.video_file_upload():
+        video_path = input.video_file_upload()[0]["datapath"]
+    else:
+        video_path = None
+    
+    query = query_params()
+    
+    generate_handout(query, video_path)
+
+
+@ui.bind_task_button(button_id="generate_handout")
+@reactive.extended_task
+async def generate_handout(query, video_path):
     with ui.Progress() as progress:
         progress.set(0, message="Processing...", detail="Initializing")
         async def callback(progress_value: Progress):
@@ -123,14 +132,16 @@ async def generate_handout():
             )
 
         try:
-            processor = get_processor(lambda progress: loop.create_task(callback(progress)))
+            processor = get_processor(query, video_path, lambda progress: loop.create_task(callback(progress)))
         except Exception as e:
+            traceback.print_exc()
             ui.notification_show(f"Error Processing ({e})", type="error", duration=None)
             return
 
         try:
             await processor.generate()
         except Exception as e:
+            traceback.print_exc()
             ui.notification_show(f"Error Processing ({e})", type="error", duration=None)
             processor.abort()
             return
@@ -140,3 +151,8 @@ async def generate_handout():
         await file_list.update_value()
         ui.update_text("video_file", value="")
         ui.update_text("video_file_upload", value="")
+
+@render.express
+def user_info():
+    f"User: {session.user}"
+    f"Groups: {session.groups}"
