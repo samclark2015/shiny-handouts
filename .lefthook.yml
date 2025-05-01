@@ -3,9 +3,9 @@ pre-commit:
     Freeze UV Dependencies:
       run: uv pip freeze > requirements.txt
       stage_fixed: true
-      glob:
-        - requirements.txt
-        - uv.lock
+      # glob:
+      #   - requirements.txt
+      #   - uv.lock
 
 
 post-merge:
