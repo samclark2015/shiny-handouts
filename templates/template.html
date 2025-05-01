@@ -1,0 +1,51 @@
+<html>
+    <head>
+        <title>Lecture Handout</title>
+        <style>
+            @page {
+                size: letter portrait;
+                margin: 12pt;
+            }
+
+            tr {
+                margin-bottom: 12pt;
+            }
+
+            img {
+                margin: 12pt;
+            }
+
+            p {
+                margin: 12pt;
+                vertical-align: top;
+            }
+
+            #spacer {
+                height: 12pt;
+            }
+        </style>
+    </head>
+    <body>
+        <table>
+        {% for filename, caption, points in pairs %}
+            <tr>
+                <td>
+                    <img src="{{ filename }}" />
+                </td>
+                <td>
+                    <p>{{ caption }}</p>
+
+                    {% if points %}
+                    <pre>{{ points }}</pre>
+                    {% endif %}
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <div id="spacer"></div>
+                </td>
+            </tr>
+        {% endfor %}
+        </table>
+    </body>
+</html>
