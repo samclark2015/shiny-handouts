@@ -1,5 +1,6 @@
 import asyncio
 import pathlib
+from pprint import pprint
 from urllib.parse import parse_qs, urlparse
 
 from shiny import reactive
@@ -10,6 +11,32 @@ from helpers import Progress
 from process import PanoptoProcessor, Processor
 
 import time
+
+import platform
+import os
+import subprocess
+
+def get_system_info():
+    info = {}
+    info['system'] = platform.system()
+    info['node'] = platform.node()
+    info['release'] = platform.release()
+    info['version'] = platform.version()
+    info['machine'] = platform.machine()
+    info['processor'] = platform.processor()
+    info['os_name'] = os.name
+    if os.name == 'nt': # For Windows
+        info['system_info'] = subprocess.check_output('systeminfo').decode('utf-8')
+    elif os.name == 'posix': # For Linux and macOS
+        info['system_info'] = subprocess.check_output(['uname', '-a']).decode('utf-8')
+    return info
+
+
+print("System Information:")
+system_info = get_system_info()
+pprint(get_system_info())
+print("Environment Variables:")
+pprint(dict(os.environ))
 
 data_path = pathlib.Path(__file__).parent / "data"
 
