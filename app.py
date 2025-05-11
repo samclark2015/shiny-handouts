@@ -70,6 +70,11 @@ with ui.layout_columns(col_widths=[12]):
     )
     def download_userscript():
         return "userscript.js"
+    
+
+    @render.express
+    def logout():
+        ui.a(f"Logout {session.user}", href="/logout")
 
 @reactive.calc
 def file_list():

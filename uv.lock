@@ -383,6 +383,15 @@ wheels = [
 ]
 
 [[package]]
+name = "itsdangerous"
+version = "2.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9c/cb/8ac0172223afbccb63986cc25049b154ecfb5e85932587206f42317be31d/itsdangerous-2.2.0.tar.gz", hash = "sha256:e0050c0b7da1eea53ffaf149c0cfbb5c6e2e2b69c4bef22c81fa6eb73e5f6173", size = 54410 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/96/92447566d16df59b2a776c0fb82dbc4d9e07cd95062562af01e408583fc4/itsdangerous-2.2.0-py3-none-any.whl", hash = "sha256:c6242fc49e35958c8b15141343aa660db5fc54d4f13a1db01a3f5891b98700ef", size = 16234 },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1336,11 +1345,13 @@ dependencies = [
     { name = "jinja2" },
     { name = "openai" },
     { name = "opencv-python" },
+    { name = "pydantic" },
     { name = "pydub" },
     { name = "requests" },
     { name = "rsconnect-python" },
     { name = "scikit-image" },
     { name = "shiny" },
+    { name = "starlette", extra = ["full"] },
     { name = "xhtml2pdf" },
 ]
 
@@ -1356,11 +1367,13 @@ requires-dist = [
     { name = "jinja2", specifier = ">=3.1.6" },
     { name = "openai", specifier = ">=1.74.0" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
+    { name = "pydantic", specifier = ">=2.11.3" },
     { name = "pydub", specifier = ">=0.25.1" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "rsconnect-python", specifier = ">=1.25.2" },
     { name = "scikit-image", specifier = ">=0.25.2" },
     { name = "shiny", specifier = ">=1.4.0" },
+    { name = "starlette", extras = ["full"], specifier = ">=0.46.2" },
     { name = "xhtml2pdf", specifier = ">=0.2.17" },
 ]
 
@@ -1395,6 +1408,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/ce/20/08dfcd9c983f6a6f4a1000d934b9e6d626cff8d2eeb77a89a68eef20a2b7/starlette-0.46.2.tar.gz", hash = "sha256:7f7361f34eed179294600af672f565727419830b54b7b084efe44bb82d2fccd5", size = 2580846 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/0c/9d30a4ebeb6db2b25a841afbb80f6ef9a854fc3b41be131d249a977b4959/starlette-0.46.2-py3-none-any.whl", hash = "sha256:595633ce89f8ffa71a015caed34a5b2dc1c0cdb3f0f1fbd1e69339cf2abeec35", size = 72037 },
+]
+
+[package.optional-dependencies]
+full = [
+    { name = "httpx" },
+    { name = "itsdangerous" },
+    { name = "jinja2" },
+    { name = "python-multipart" },
+    { name = "pyyaml" },
 ]
 
 [[package]]

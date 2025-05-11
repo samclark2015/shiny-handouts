@@ -10,11 +10,13 @@ dependencies = [
     "jinja2>=3.1.6",
     "openai>=1.74.0",
     "opencv-python>=4.11.0.86",
+    "pydantic>=2.11.3",
     "pydub>=0.25.1",
     "requests>=2.32.3",
     "rsconnect-python>=1.25.2",
     "scikit-image>=0.25.2",
     "shiny>=1.4.0",
+    "starlette[full]>=0.46.2",
     "xhtml2pdf>=0.2.17",
 ]
 
