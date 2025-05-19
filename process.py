@@ -25,7 +25,6 @@ from helpers import (
 
 out_dir = os.path.join("data", "output")
 
-pool = concurrent.futures.ThreadPoolExecutor()
 
 class Processor:
     def __init__(
@@ -39,6 +38,7 @@ class Processor:
         self.use_ai = use_ai
         self.redo_transcription = redo_transcription
         self.callback = callback or (lambda _: None)
+        self.pool = concurrent.futures.ThreadPoolExecutor()
 
         if os.path.exists(video_url):
             self.delivery_id = get_file_hash(video_url)
@@ -101,7 +101,7 @@ class Processor:
                 last_frame_gs, frame_gs, full=True
             )
 
-            if score < 0.85 or (idx + 1) == len(captions):
+            if score < 0.925 or (idx + 1) == len(captions):
                 cap_full = " ".join(cum_captions)
                 image_path = os.path.join(
                     "data", "frames", self.delivery_id, f"{uuid4()}.png"
@@ -118,7 +118,7 @@ class Processor:
             cum_captions.append(cap.text)
         return pairs
 
-    def write_output(self, captions: list[Slide]) -> str:
+    async def write_output(self, captions: list[Slide]) -> str:
         template_path = os.path.join(os.path.dirname(__file__), "templates")
         env = Environment(
             loader=FileSystemLoader(template_path), autoescape=select_autoescape()
@@ -127,12 +127,12 @@ class Processor:
 
         html = template.render(pairs=captions)
 
-        title = asyncio.run(generate_title(html))
+        title = await generate_title(html)
         path = os.path.join(out_dir, f"{title}.pdf")
 
 
         with open(path, "wb") as f:
-            pisa_status = pisa.CreatePDF(html, dest=f)
+            pisa_status = await self.run_in_threadpool(pisa.CreatePDF, html, dest=f)
             if pisa_status.err:
                 raise ValueError("Error generating PDF", pisa_status)
 
@@ -152,17 +152,19 @@ class Processor:
         return output
 
     async def run_in_threadpool(self, func: Callable, *args, **kwargs):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(pool, func, *args, **kwargs)
+        def wrapper():
+            return func(*args, **kwargs)
+        return await self.loop.run_in_executor(self.pool, wrapper)
     
     async def generate(self) -> str:
+        self.loop = asyncio.get_event_loop()
         if not os.path.exists(self.video_path):
             await self.run_in_threadpool(self.download_video)
         caps = await self.get_captions()
         pairs = await self.run_in_threadpool(self.match_frames, caps)
         if self.use_ai:
             pairs = await self.ai_transform_all(pairs)
-        filename = await self.run_in_threadpool(self.write_output, pairs)
+        filename = await self.write_output(pairs)
         # shutil.rmtree(os.path.join("data", "frames", self.delivery_id))
         return filename
 
