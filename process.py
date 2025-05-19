@@ -48,8 +48,6 @@ class Processor:
             self.delivery_id = header.headers["Etag"]
             self.video_path = os.path.join("data", "input", f"{self.delivery_id}.mp4")
 
-        os.makedirs("data/input", exist_ok=True)
-        os.makedirs("data/output", exist_ok=True)
         os.makedirs(os.path.join("data/frames", self.delivery_id), exist_ok=True)
 
 
@@ -191,9 +189,8 @@ class PanoptoProcessor(Processor):
         self.callback = callback or (lambda _: None)
 
         self.video_path = os.path.join("data", "input", f"{self.delivery_id}.mp4")
+        self.pool = concurrent.futures.ThreadPoolExecutor()
 
-        os.makedirs("data/input", exist_ok=True)
-        os.makedirs("data/output", exist_ok=True)
         os.makedirs(os.path.join("data/frames", self.delivery_id), exist_ok=True)
 
     def get_delivery_info(self, captions: bool = False):

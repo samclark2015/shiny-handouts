@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import ffmpeg_binaries as ffmpeg
 
@@ -18,5 +19,9 @@ def initialize(data_path: Path):
 
     ffmpeg.init()
     ffmpeg.add_to_path()
+
+    os.makedirs("data/input", exist_ok=True)
+    os.makedirs("data/output", exist_ok=True)
+    os.makedirs("data/frames", exist_ok=True)
 
     print("App initialized")
