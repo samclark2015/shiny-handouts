@@ -22,8 +22,12 @@ load_dotenv()
 
 app_middleware = [
     Middleware(SessionMiddleware, secret_key=os.environ["SESSION_SECRET"]),
-    Middleware(ShinyCredentialsMiddleware),
 ]
+
+if "AUTH_ENABLED" in os.environ:
+	app_middleware.append(
+		 Middleware(ShinyCredentialsMiddleware)
+	)
 
 shiny_middleware = [Middleware(EnsureAuthenticatedMiddleware)]
 
