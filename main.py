@@ -23,13 +23,15 @@ load_dotenv()
 app_middleware = [
     Middleware(SessionMiddleware, secret_key=os.environ["SESSION_SECRET"]),
 ]
+shiny_middleware = []
 
 if "AUTH_ENABLED" in os.environ:
 	app_middleware.append(
 		 Middleware(ShinyCredentialsMiddleware)
 	)
-
-shiny_middleware = [Middleware(EnsureAuthenticatedMiddleware)]
+	shiny_middleware.append(
+		Middleware(EnsureAuthenticatedMiddleware)
+	)
 
 shiny_app = wrap_express_app(Path("app.py"))
 
