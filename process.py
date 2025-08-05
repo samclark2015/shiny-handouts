@@ -87,7 +87,7 @@ class Processor:
 
                 # Download each segment
                 for i, segment in enumerate(segments):
-                    segment_url = urljoin(url, segment.uri)
+                    segment_url = urljoin(playlist.base_uri or url, segment.uri)
                     segment_path = os.path.join(temp_dir, f"segment_{i:04d}.ts")
 
                     urllib.request.urlretrieve(segment_url, segment_path)
@@ -112,7 +112,7 @@ class Processor:
             # self.callback(Progress("Error", 1, 1))
             body = e.read().decode("utf-8")
             raise ValueError(
-                f"HTTP Error while downloading m3u8 stream: {str(e)}, {body}"
+                f"HTTP Error while downloading m3u8 stream: {str(e)} @ {e.url}"
             )
         except Exception as e:
             raise ValueError(f"Failed to download m3u8 stream: {str(e)}")
