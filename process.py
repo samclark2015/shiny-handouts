@@ -59,17 +59,23 @@ class Processor:
 
     def _download_m3u8_stream(self, url: str) -> None:
         """Download and combine M3U8 stream segments into a single video file."""
-        self.callback(Progress("Parsing m3u8 playlist", 0, 1))
+        self.callback(Progress("Parsing playlist", 0, 1))
 
         try:
             # Parse the m3u8 playlist
             playlist = m3u8.load(url)
 
             if playlist.is_variant:
-                # Multiple quality streams available, select the first one
-                # (or you could implement quality selection logic here)
+                # Select the highest quality stream or first available
                 if playlist.playlists:
-                    stream_url = urljoin(url, playlist.playlists[0].uri)
+                    # Sort by bandwidth (highest first) and select the best quality
+                    best_playlist = min(
+                        playlist.playlists,
+                        key=lambda p: p.stream_info.bandwidth
+                        if p.stream_info.bandwidth
+                        else 0,
+                    )
+                    stream_url = urljoin(url, best_playlist.uri)
                     playlist = m3u8.load(stream_url)
                 else:
                     raise ValueError("No streams found in variant playlist")
@@ -85,32 +91,75 @@ class Processor:
             with tempfile.TemporaryDirectory() as temp_dir:
                 segment_files = []
 
-                # Download each segment
+                # Download each segment with retry logic
                 for i, segment in enumerate(segments):
                     segment_url = urljoin(playlist.base_uri or url, segment.uri)
                     segment_path = os.path.join(temp_dir, f"segment_{i:04d}.ts")
 
-                    urllib.request.urlretrieve(segment_url, segment_path)
+                    # Retry download up to 3 times
+                    for attempt in range(3):
+                        try:
+                            urllib.request.urlretrieve(segment_url, segment_path)
+                            # Verify the segment was downloaded completely
+                            if os.path.getsize(segment_path) > 0:
+                                break
+                        except Exception as e:
+                            if attempt == 2:  # Last attempt
+                                raise ValueError(
+                                    f"Failed to download segment {i} after 3 attempts: {e}"
+                                )
+                            continue
+
                     segment_files.append(segment_path)
 
                     # Update progress
                     self.callback(
-                        Progress("Downloading m3u8 segments", i + 1, total_segments)
+                        Progress("Downloading video segments", i + 1, total_segments)
                     )
 
-                # Combine segments into final video file
+                # Use ffmpeg to properly concatenate segments instead of binary concatenation
                 self.callback(Progress("Combining segments", 0, 1))
 
-                with open(self.video_path, "wb") as outfile:
+                # Create a file list for ffmpeg
+                concat_file = os.path.join(temp_dir, "segments.txt")
+                with open(concat_file, "w") as f:
                     for segment_file in segment_files:
-                        with open(segment_file, "rb") as infile:
-                            outfile.write(infile.read())
+                        f.write(f"file '{segment_file}'\n")
+
+                # Use ffmpeg to concatenate properly
+                import subprocess
+
+                result = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        concat_file,
+                        "-c",
+                        "copy",
+                        "-y",
+                        self.video_path,
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode != 0:
+                    # Fallback to binary concatenation if ffmpeg fails
+                    self.callback(
+                        Progress("FFmpeg failed, using binary concatenation", 0, 1)
+                    )
+                    with open(self.video_path, "wb") as outfile:
+                        for segment_file in segment_files:
+                            with open(segment_file, "rb") as infile:
+                                outfile.write(infile.read())
 
                 self.callback(Progress("Combining segments", 1, 1))
 
         except urllib.request.HTTPError as e:
-            # self.callback(Progress("Error", 1, 1))
-            body = e.read().decode("utf-8")
             raise ValueError(
                 f"HTTP Error while downloading m3u8 stream: {str(e)} @ {e.url}"
             )
