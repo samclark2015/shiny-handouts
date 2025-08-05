@@ -108,6 +108,12 @@ class Processor:
 
                 self.callback(Progress("Combining segments", 1, 1))
 
+        except urllib.request.HTTPError as e:
+            # self.callback(Progress("Error", 1, 1))
+            body = e.read().decode("utf-8")
+            raise ValueError(
+                f"HTTP Error while downloading m3u8 stream: {str(e)}, {body}"
+            )
         except Exception as e:
             raise ValueError(f"Failed to download m3u8 stream: {str(e)}")
 
