@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
-import ffmpeg_binaries as ffmpeg
+
+# import ffmpeg_binaries as ffmpeg
 
 
 intialized = False
@@ -17,8 +18,8 @@ def initialize(data_path: Path):
         data_path.mkdir(parents=True)
         data_path.joinpath("output").mkdir(parents=True)
 
-    ffmpeg.init()
-    ffmpeg.add_to_path()
+    # ffmpeg.init()
+    # ffmpeg.add_to_path()
 
     os.makedirs("data/input", exist_ok=True)
     os.makedirs("data/output", exist_ok=True)
