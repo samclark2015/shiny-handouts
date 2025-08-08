@@ -1,23 +1,51 @@
 # OAuth2 configuration
 import json
 import os
+from typing import Optional
 
 import httpx
 import pydantic
 from dotenv import load_dotenv
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import HTTPConnection, Request
+from starlette.requests import HTTPConnection
 from starlette.responses import RedirectResponse
 
 load_dotenv()
 
-keycloak_url = os.environ.get("KEYCLOAK_URL")
-client_id = os.environ.get("CLIENT_ID")
-client_secret = os.environ.get("CLIENT_SECRET")
-redirect_uri = os.environ.get("REDIRECT_URI")
+oauth_url = os.environ.get("OAUTH_URL")
+oauth_client_id = os.environ.get("OAUTH_CLIENT_ID")
+oauth_client_secret = os.environ.get("OAUTH_CLIENT_SECRET")
+oauth_redirect_uri = os.environ.get("OAUTH_REDIRECT_URI")
 
-if not all([keycloak_url, client_id, client_secret, redirect_uri]):
+if not all([oauth_url, oauth_client_id, oauth_client_secret, oauth_redirect_uri]):
     raise ValueError("Missing required environment variables for OAuth2 configuration")
+
+
+class OpenIDConfiguration(pydantic.BaseModel):
+    authorization_endpoint: str
+    token_endpoint: str
+    userinfo_endpoint: str
+    end_session_endpoint: str
+
+
+_openid_config: Optional[OpenIDConfiguration] = None
+
+
+async def get_openid_configuration() -> OpenIDConfiguration:
+    global _openid_config
+    if _openid_config is not None:
+        return _openid_config
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(f"{oauth_url}/.well-known/openid-configuration")
+        if resp.status_code != 200:
+            raise ValueError(
+                f"Failed to fetch OpenID configuration: {resp.status_code}"
+            )
+
+        config_data = resp.json()
+        _openid_config = OpenIDConfiguration(**config_data)
+        return _openid_config
 
 
 class ShinyCredentialsMiddleware:
@@ -41,10 +69,11 @@ class ShinyCredentialsMiddleware:
 class EnsureAuthenticatedMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if "access_token" not in request.session:
+            config = await get_openid_configuration()
             auth_url = (
-                f"{keycloak_url}/protocol/openid-connect/auth"
-                f"?client_id={client_id}"
-                f"&redirect_uri={redirect_uri}"
+                f"{config.authorization_endpoint}"
+                f"?client_id={oauth_client_id}"
+                f"&redirect_uri={oauth_redirect_uri}"
                 f"&response_type=code"
                 f"&scope=openid profile email roles groups"
             )
@@ -64,14 +93,15 @@ class UserInfo(pydantic.BaseModel):
     email: str
 
 
-async def get_user_info(request: Request) -> UserInfo | None:
+async def get_user_info(request: HTTPConnection) -> UserInfo | None:
     token = get_token_from_storage(request)
     if not token:
         return None
 
+    config = await get_openid_configuration()
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{keycloak_url}/protocol/openid-connect/userinfo",
+            config.userinfo_endpoint,
             headers={"Authorization": f"Bearer {token}"},
         )
         if resp.status_code != 200:
@@ -83,28 +113,29 @@ async def get_user_info(request: Request) -> UserInfo | None:
         return UserInfo(**user_info)
 
 
-def get_token_from_storage(request: Request):
+def get_token_from_storage(request: HTTPConnection):
     return request.session.get("access_token")
 
 
-def save_token_to_storage(request: Request, token: str):
+def save_token_to_storage(request: HTTPConnection, token: str):
     request.session["access_token"] = token
 
 
-def clear_token_from_storage(request: Request):
+def clear_token_from_storage(request: HTTPConnection):
     request.session.pop("access_token", None)
 
 
 async def exchange_code(code: str):
+    config = await get_openid_configuration()
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            f"{keycloak_url}/protocol/openid-connect/token",
+            config.token_endpoint,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": redirect_uri,
-                "client_id": client_id,
-                "client_secret": client_secret,
+                "redirect_uri": oauth_redirect_uri,
+                "client_id": oauth_client_id,
+                "client_secret": oauth_client_secret,
             },
         )
         if resp.status_code != 200:
@@ -113,7 +144,8 @@ async def exchange_code(code: str):
         return data.get("access_token")
 
 
-def logout(request: Request):
+async def logout(request: HTTPConnection):
     clear_token_from_storage(request)
-    url = f"{keycloak_url}/protocol/openid-connect/logout?client_id={client_id}&redirect_uri={redirect_uri}"
+    config = await get_openid_configuration()
+    url = f"{config.end_session_endpoint}?client_id={oauth_client_id}&redirect_uri={oauth_redirect_uri}"
     return RedirectResponse(url=url)
