@@ -116,10 +116,10 @@ def get_processor(query, video_path, callback) -> Processor:
 @reactive.effect
 @reactive.event(input.generate_handout)
 def handle_generate_handout():
-    if input.video_file.is_set():
-        video_path = input.video_file()
-    elif input.video_file_upload.is_set():
+    if input.video_file_upload.is_set():
         video_path = input.video_file_upload()[0]["datapath"]
+    elif input.video_file.is_set():
+        video_path = input.video_file()
     else:
         video_path = None
 
