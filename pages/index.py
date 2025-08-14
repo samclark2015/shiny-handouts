@@ -11,10 +11,11 @@ from state import global_state
 def index(cookie: str | None = None, url: str | None = None):
     with ui.header():
         ui.label("Lecture Downloader").classes("text-2xl font-bold grow")
-        name = app.storage.user["user_data"]["userinfo"]["name"]
-        with ui.row(align_items="center"):
-            ui.label(f"Logged in as {name}").classes("text-lg")
-            ui.button("Logout", on_click=logout, color="goldenrod")
+        if app.storage.user.get("user_data"):
+            name = app.storage.user["user_data"]["userinfo"]["name"]
+            with ui.row(align_items="center"):
+                ui.label(f"Logged in as {name}").classes("text-lg")
+                ui.button("Logout", on_click=logout, color="goldenrod")
 
     with ui.column(align_items="center").classes("w-full"):
         with ui.card().classes("w-1/2 flex"):
