@@ -1,147 +1,80 @@
-# OAuth2 configuration
-import json
 import os
-from typing import Optional
 
-import httpx
-import pydantic
-from dotenv import load_dotenv
+from authlib.integrations.starlette_client import OAuth, OAuthError
+from fastapi import Request
+from fastapi.responses import RedirectResponse
+from nicegui import app, ui
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import HTTPConnection
-from starlette.responses import RedirectResponse
-
-load_dotenv()
 
 oauth_url = os.environ.get("OAUTH_URL")
 oauth_client_id = os.environ.get("OAUTH_CLIENT_ID")
 oauth_client_secret = os.environ.get("OAUTH_CLIENT_SECRET")
-oauth_redirect_uri = os.environ.get("OAUTH_REDIRECT_URI")
-
-if not all([oauth_url, oauth_client_id, oauth_client_secret, oauth_redirect_uri]):
-    raise ValueError("Missing required environment variables for OAuth2 configuration")
 
 
-class OpenIDConfiguration(pydantic.BaseModel):
-    authorization_endpoint: str
-    token_endpoint: str
-    userinfo_endpoint: str
-    end_session_endpoint: str
+oauth = OAuth()
+
+unrestricted_page_routes = {"/callback", "/login", "/login/start"}
 
 
-_openid_config: Optional[OpenIDConfiguration] = None
+class AuthMiddleware(BaseHTTPMiddleware):
+    """This middleware restricts access to all NiceGUI pages.
+
+    It redirects the user to the login page if they are not authenticated.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        user_data = app.storage.user.get("user_data", None)
+        if not user_data:
+            if (
+                not request.url.path.startswith("/_nicegui")
+                and request.url.path not in unrestricted_page_routes
+            ):
+                url = request.url_for("login")
+                return RedirectResponse(url)
+        return await call_next(request)
 
 
-async def get_openid_configuration() -> OpenIDConfiguration:
-    global _openid_config
-    if _openid_config is not None:
-        return _openid_config
+def enable_oauth():
+    oauth.register(
+        "authentik",
+        client_id=oauth_client_id,
+        client_secret=oauth_client_secret,
+        server_metadata_url=oauth_url,
+        client_kwargs={"scope": "openid email profile"},
+    )
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(f"{oauth_url}/.well-known/openid-configuration")
-        if resp.status_code != 200:
-            raise ValueError(
-                f"Failed to fetch OpenID configuration: {resp.status_code}"
-            )
+    @app.get("/callback")
+    async def oauth_handler(request: Request):
+        try:
+            user_data = await oauth.authentik.authorize_access_token(request)
+        except OAuthError as e:
+            print(f"OAuth error: {e}")
+            return "OAuth Failure."
 
-        config_data = resp.json()
-        _openid_config = OpenIDConfiguration(**config_data)
-        return _openid_config
+        app.storage.user["user_data"] = user_data
+        return RedirectResponse("/")
 
+    app.add_middleware(AuthMiddleware)
 
-class ShinyCredentialsMiddleware:
-    def __init__(self, app):
-        self.app = app
+    @ui.page("/login")
+    async def login():
+        with ui.column().classes("w-full h-dvh justify-center items-center"):
+            with ui.card(align_items="center").classes("w-1/4 p-12"):
+                ui.label("Login").classes("text-2xl font-bold")
+                ui.label(
+                    "Welcome to Shiny Handouts! This site allows you to access and manage handouts securely. You must log in to use the site."
+                ).classes("mb-4")
+                ui.button(
+                    "Login with Authentik",
+                    on_click=lambda: ui.navigate.to("/login/start"),
+                )
 
-    async def __call__(self, scope, receive, send):
-        request = HTTPConnection(scope, receive)
-        if "access_token" in request.session:
-            user = await get_user_info(request)
-            if user:
-                shiny_credentials = {"user": user.name, "groups": []}
-                headers = dict(scope["headers"])
-                headers[b"shiny-server-credentials"] = json.dumps(
-                    shiny_credentials
-                ).encode()
-                scope["headers"] = [(k, v) for k, v in headers.items()]
-        await self.app(scope, receive, send)
-
-
-class EnsureAuthenticatedMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if "access_token" not in request.session:
-            config = await get_openid_configuration()
-            auth_url = (
-                f"{config.authorization_endpoint}"
-                f"?client_id={oauth_client_id}"
-                f"&redirect_uri={oauth_redirect_uri}"
-                f"&response_type=code"
-                f"&scope=openid profile email roles groups"
-            )
-            return RedirectResponse(auth_url)
-
-        response = await call_next(request)
-        return response
+    @app.get("/login/start")
+    async def login_start(request: Request):
+        url = request.url_for("oauth_handler")
+        return await oauth.authentik.authorize_redirect(request, url)
 
 
-class UserInfo(pydantic.BaseModel):
-    sub: str
-    name: str
-    email: str
-
-
-async def get_user_info(request: HTTPConnection) -> UserInfo | None:
-    token = get_token_from_storage(request)
-    if not token:
-        return None
-
-    config = await get_openid_configuration()
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            config.userinfo_endpoint,
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if resp.status_code != 200:
-            clear_token_from_storage(request)
-            return None
-
-        user_info = resp.json()
-        print(user_info)
-        return UserInfo(**user_info)
-
-
-def get_token_from_storage(request: HTTPConnection):
-    return request.session.get("access_token")
-
-
-def save_token_to_storage(request: HTTPConnection, token: str):
-    request.session["access_token"] = token
-
-
-def clear_token_from_storage(request: HTTPConnection):
-    request.session.pop("access_token", None)
-
-
-async def exchange_code(code: str):
-    config = await get_openid_configuration()
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            config.token_endpoint,
-            data={
-                "grant_type": "authorization_code",
-                "code": code,
-                "redirect_uri": oauth_redirect_uri,
-                "client_id": oauth_client_id,
-                "client_secret": oauth_client_secret,
-            },
-        )
-        if resp.status_code != 200:
-            return None
-        data = resp.json()
-        return data.get("access_token")
-
-
-async def logout(request: HTTPConnection):
-    clear_token_from_storage(request)
-    config = await get_openid_configuration()
-    url = f"{config.end_session_endpoint}?client_id={oauth_client_id}&redirect_uri={oauth_redirect_uri}"
-    return RedirectResponse(url=url)
+def logout() -> None:
+    del app.storage.user["user_data"]
+    ui.navigate.to("/")

@@ -4,8 +4,8 @@ import mimetypes
 import os
 from collections import namedtuple
 from io import BytesIO
-import requests
 
+import requests
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from pydub import AudioSegment
@@ -17,7 +17,6 @@ Slide = namedtuple("Slide", ("image", "caption", "extra"))
 Progress = namedtuple("Progress", ("stage", "complete", "total"))
 
 key = os.environ["OPENAI_API_KEY"]
-# model = "llama3.2:3b-instruct-q8_0"
 model = "gpt-4o-mini"
 
 # client = ollama.AsyncClient()
