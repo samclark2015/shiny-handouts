@@ -25,6 +25,6 @@ ui.run(
     storage_secret=secret,
     reload=False,
     show=False,
-    uvicorn_logging_level="debug",
+    uvicorn_logging_level="info",
     forwarded_allow_ips="*",
 )
