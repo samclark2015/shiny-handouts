@@ -25,4 +25,5 @@ ui.run(
     storage_secret=secret,
     reload=False,
     show=False,
+    uvicorn_logging_level="debug",
 )
