@@ -26,4 +26,5 @@ ui.run(
     reload=False,
     show=False,
     uvicorn_logging_level="debug",
+    forwarded_allow_ips="*",
 )
