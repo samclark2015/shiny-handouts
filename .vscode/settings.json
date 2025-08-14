@@ -1,0 +1,14 @@
+{
+  "tailwindCSS.experimental.configFile": "tailwind.config.js",
+  "tailwindCSS.includeLanguages": {
+    "python": "javascript"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "editor.inlineSuggest.enabled": true,
+  "tailwindCSS.experimental.classRegex": [
+    [".classes\\(([^;]*)\\)", "'([^']*)'"],
+    [".classes\\(([^;]*)\\)", "\"([^\"]*)\""],
+  ],
+}

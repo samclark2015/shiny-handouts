@@ -3,22 +3,29 @@ name = "shiny-handouts"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.13"
 dependencies = [
+    "audioop-lts>=0.2.2",
+    "authlib>=1.6.1",
     "dotenv>=0.9.9",
-    "ffmpeg-binaries-compat>=1.0.1",
     "jinja2>=3.1.6",
+    "m3u8>=6.0.0",
+    "nicegui>=2.22.2",
     "openai>=1.74.0",
     "opencv-python>=4.11.0.86",
+    "pydantic>=2.11.3",
     "pydub>=0.25.1",
     "requests>=2.32.3",
     "rsconnect-python>=1.25.2",
     "scikit-image>=0.25.2",
     "shiny>=1.4.0",
+    "starlette[full]>=0.46.2",
     "xhtml2pdf>=0.2.17",
 ]
 
 [dependency-groups]
 dev = [
     "lefthook>=1.11.12",
+    "types-authlib>=1.6.0.20250809",
+    "types-oauthlib>=3.3.0.20250809",
 ]
