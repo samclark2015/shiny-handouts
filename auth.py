@@ -35,7 +35,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 
 def enable_oauth():
-    print("Enabling OAuth")
     oauth.register(
         "authentik",
         client_id=oauth_client_id,
