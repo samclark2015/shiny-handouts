@@ -49,6 +49,8 @@ class ProcessingContext:
 
     @property
     def video_path(self) -> str:
+        if isinstance(self.source, str) and os.path.exists(self.source):
+            return self.source
         return os.path.join(in_dir, f"video_{self.source_id}.mp4")
 
 
@@ -239,8 +241,11 @@ def generate_context(pipeline: Pipeline, input: ProcessingInput) -> ProcessingCo
 
 def download_video(pipeline: Pipeline, ctx: ProcessingContext) -> ProcessingContext:
     """Download video if it doesn't exist."""
-    if isinstance(ctx.source, str) and os.path.exists(ctx.source):
-        os.rename(ctx.source, ctx.video_path)
+    if (
+        isinstance(ctx.source, str)
+        and os.path.exists(ctx.source)
+        and ctx.source == ctx.video_path
+    ):
         return ctx
 
     if not os.path.exists(ctx.video_path):
@@ -356,6 +361,7 @@ def generate_pdf_output(ctx: ProcessingContext, html: str, path: str) -> None:
 
 async def generate_output(pipeline: Pipeline, ctx: ProcessingContext) -> str:
     """Generate the final PDF output."""
+    pipeline.report_progress("Generating PDF", 0)
     template_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "templates"
     )
@@ -368,11 +374,13 @@ async def generate_output(pipeline: Pipeline, ctx: ProcessingContext) -> str:
 
     title = await generate_title(html)
     path = os.path.join(out_dir, f"{title}.pdf")
+    os.makedirs(out_dir, exist_ok=True)
 
     # Run PDF generation in executor since it's CPU-bound
     await asyncio.get_event_loop().run_in_executor(
         None, generate_pdf_output, ctx, html, path
     )
+    pipeline.report_progress("Generating PDF", 1.0)
 
     return path
 
