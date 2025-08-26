@@ -1,8 +1,8 @@
 import asyncio
-from argparse import ArgumentParser
-from concurrent.futures import ThreadPoolExecutor
-from process import Processor
 import traceback as tb
+from argparse import ArgumentParser
+
+from pipeline.process import create_pipeline
 
 parser = ArgumentParser()
 
@@ -20,18 +20,26 @@ parser.add_argument(
 args = parser.parse_args()
 
 
-def worker(filename: str):
+sem = asyncio.Semaphore(args.n)
+
+
+def callback(pipeline, progress):
+    print("Progress:", progress)
+
+
+async def worker(filename: str):
     try:
         print(f"Processing {filename}...")
-        processor = Processor(filename, True)
-        asyncio.run(processor.generate())
+        pipeline = create_pipeline(callback=callback)
+        async with sem:
+            await pipeline.run(filename)
         print(f"Done processing {filename}.")
     except Exception as e:
         tb.print_exception(e)
 
-def main():
-    with ThreadPoolExecutor(max_workers=args.n) as executor:
-        executor.map(worker, args.files)
+async def main():
+    await asyncio.gather(*(worker(f) for f in args.files))
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
