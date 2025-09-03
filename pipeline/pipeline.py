@@ -53,7 +53,9 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         self._stages.append(stage)
         return cast(Pipeline[PipelineIn, StageOut], self)
 
-    async def run(self, data: PipelineIn) -> PipelineOut | PipelineFailure:
+    async def run(
+        self, data: PipelineIn, throw: bool = False
+    ) -> PipelineOut | PipelineFailure:
         """
         Run the pipeline with the given input data.
         Returns the final output after all stages have been applied.
@@ -64,8 +66,12 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
                 self._current_stage = i
                 current_data = await stage(self, current_data)
             except PipelineFailure as e:
+                if throw:
+                    raise
                 return e
             except Exception as e:
+                if throw:
+                    raise
                 return PipelineFailure(f"Error in stage {stage.__name__}: {e}")
             finally:
                 self._current_stage = None

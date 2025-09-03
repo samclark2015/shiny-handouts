@@ -3,49 +3,59 @@
         <title>Lecture Handout</title>
         <style>
             @page {
-                size: letter portrait;
+                size: letter landscape;
                 margin: 12pt;
             }
-
-            tr {
-                margin-bottom: 12pt;
+            table {
+                width: 100%;
+                border-collapse: separate;
             }
-
-            img {
-                margin: 12pt;
-            }
-
-            p {
-                margin: 12pt;
+            td {
                 vertical-align: top;
+                padding: 8pt;
+                width: 192pt;
+                height: 147pt;
             }
-
-            #spacer {
-                height: 12pt;
+            img {
+                display: block;
+                margin-bottom: 6pt;
+                width: 180pt;
+                height: auto;
+            }
+            p {
+                margin-bottom: 6pt;
+                font-size: 6pt;
+            }
+            pre {
+                margin-top: 0;
+                margin-bottom: 6pt;
+                font-size: 10pt;
             }
         </style>
     </head>
     <body>
+        {% for page in range((pairs|length // 16) + ((pairs|length % 16 > 0)|int)) %}
         <table>
-        {% for filename, caption, points in pairs %}
-            <tr>
-                <td>
-                    <img src="{{ filename }}" />
-                </td>
-                <td>
-                    <p>{{ caption }}</p>
-
-                    {% if points %}
-                    <pre>{{ points }}</pre>
+            {% for row in range(4) %}
+                <tr>
+                {% for col in range(4) %}
+                    {% set idx = page * 16 + row * 4 + col %}
+                    {% if idx < pairs|length %}
+                        {% set filename, caption, points = pairs[idx] %}
+                        <td>
+                            <img src="{{ filename }}" />
+                            <p>{{ caption }}</p>
+                            {% if points %}
+                            <pre>{{ points }}</pre>
+                            {% endif %}
+                        </td>
+                    {% else %}
+                        <td></td>
                     {% endif %}
-                </td>
-            </tr>
-            <tr>
-                <td colspan="2">
-                    <div id="spacer"></div>
-                </td>
-            </tr>
-        {% endfor %}
+                {% endfor %}
+                </tr>
+            {% endfor %}
         </table>
+        {% endfor %}
     </body>
 </html>

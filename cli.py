@@ -32,7 +32,7 @@ async def worker(filename: str):
         print(f"Processing {filename}...")
         pipeline = create_pipeline(callback=callback)
         async with sem:
-            await pipeline.run(filename)
+            await pipeline.run(filename, throw=True)
         print(f"Done processing {filename}.")
     except Exception as e:
         tb.print_exception(e)
