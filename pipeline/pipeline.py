@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
@@ -24,6 +25,7 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         ] = []
         self._callback = callback
         self._current_stage: int | None = None
+        self._logger = logging.getLogger(__name__)
 
     def _wrap_sync(
         self, stage: Callable[["Pipeline", PipelineOut], Any]
@@ -66,13 +68,18 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
                 self._current_stage = i
                 current_data = await stage(self, current_data)
             except PipelineFailure as e:
+                self._logger.error(
+                    f"Pipeline failed at stage {stage.__name__}: {e.message}"
+                )
                 if throw:
                     raise
                 return e
             except Exception as e:
+                message = f"Error in pipeline stage {stage.__name__}: {e}"
+                self._logger.exception(message)
                 if throw:
                     raise
-                return PipelineFailure(f"Error in stage {stage.__name__}: {e}")
+                return PipelineFailure(message)
             finally:
                 self._current_stage = None
         self._current_stage = len(self._stages)
