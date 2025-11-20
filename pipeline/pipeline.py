@@ -26,6 +26,7 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         self._callback = callback
         self._current_stage: int | None = None
         self._logger = logging.getLogger(__name__)
+        self._loop = asyncio.get_event_loop()
 
     def _wrap_sync(
         self, stage: Callable[["Pipeline", PipelineOut], Any]
@@ -35,9 +36,7 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         """
 
         async def wrapped_stage(pipeline: Pipeline, data: PipelineOut) -> Any:
-            return await asyncio.get_event_loop().run_in_executor(
-                None, stage, pipeline, data
-            )
+            return await self._loop.run_in_executor(None, stage, pipeline, data)
 
         wrapped_stage.__name__ = stage.__name__
 
@@ -62,6 +61,11 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         Run the pipeline with the given input data.
         Returns the final output after all stages have been applied.
         """
+        if self._loop != asyncio.get_event_loop():
+            raise RuntimeError(
+                "Pipeline run called from a different event loop that it was created"
+            )
+
         current_data: Any = data
         for i, stage in enumerate(self._stages):
             try:
@@ -101,7 +105,9 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
             complete += 1.0 / total * progress
 
         if self._callback:
-            self._callback(self, Progress(message, complete))
+            self._loop.call_soon_threadsafe(
+                self._callback, self, Progress(message, complete)
+            )
 
     def set_callback(self, callback: Callable[["Pipeline", Progress], None]) -> None:
         self._callback = callback
