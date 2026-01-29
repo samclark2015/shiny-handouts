@@ -1,0 +1,42 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.org/schemas/study-table.schema.json",
+    "title": "Study Table (Object Wrapper with Rows Array)",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["rows"],
+    "properties": {
+        "rows": {
+            "type": "array",
+            "description": "Array of CSV rows. Each item maps 1:1 to a CSV row with the specified headers.",
+            "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                    "Condition",
+                    "Risk Factors",
+                    "Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course",
+                    "Pathology",
+                    "Clinical Symptoms/Prognosis/Recurrence",
+                    "Diagnosis/Labs",
+                    "Presentation/Biopsy/Histology",
+                    "Treatment",
+                    "Step 1–style presentation/Vignette",
+                    "Mnemonic/Etymology"
+                ],
+                "properties": {
+                    "Condition": { "type": "string" },
+                    "Risk Factors": { "type": "string" },
+                    "Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course": { "type": "string" },
+                    "Pathology": { "type": "string" },
+                    "Clinical Symptoms/Prognosis/Recurrence": { "type": "string" },
+                    "Diagnosis/Labs": { "type": "string" },
+                    "Presentation/Biopsy/Histology": { "type": "string" },
+                    "Treatment": { "type": "string" },
+                    "Step 1–style presentation/Vignette": { "type": "string" },
+                    "Mnemonic/Etymology": { "type": "string" }
+                }
+            }
+        }
+    }
+}

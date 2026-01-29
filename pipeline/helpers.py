@@ -1,16 +1,15 @@
 import base64
 import hashlib
+import json
 import mimetypes
 import os
 from collections import namedtuple
 from io import BytesIO
 
 import requests
-from dotenv import load_dotenv
+from chatlas import ChatOpenAI, content_pdf_file
 from openai import AsyncOpenAI
 from pydub import AudioSegment
-
-load_dotenv()
 
 Caption = namedtuple("Caption", ("text", "timestamp"))
 Slide = namedtuple("Slide", ("image", "caption", "extra"))
@@ -149,3 +148,32 @@ def get_file_hash(filename, algorithm="sha256", block_size=65536):
 
 def fetch(base: str, cookie: str, url: str, params: dict[str, str] = {}):
     return requests.get(f"{base}/{url}", cookies={".ASPXAUTH": cookie}, params=params).json()
+
+
+def read_file(filename: str) -> str:
+    with open(filename, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+async def generate_spreadsheet_helper(filename: str) -> str:
+    prompt = read_file("prompt.md")
+    schema = json.load(open("schema.json", "r", encoding="utf-8"))
+
+    client = ChatOpenAI(api_key=key, model=model, system_prompt=prompt)
+
+    response = client.chat(
+        content_pdf_file(filename),
+        stream=False,
+        kwargs={
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": "spreadsheet_schema",
+                    "schema": schema,
+                }
+            }
+        },
+    )
+
+    data = response.get_content()
+    return data

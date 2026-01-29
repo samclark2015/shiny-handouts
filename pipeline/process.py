@@ -1,18 +1,25 @@
 import asyncio
+import json
 import os
+import shutil
 import subprocess
 import tempfile
 import urllib.request
 from collections import namedtuple
 from dataclasses import dataclass
+from tempfile import TemporaryDirectory
 from typing import Callable, cast
 from urllib.parse import urljoin
 from uuid import uuid4
 
 import cv2
 import m3u8
+import pandas as pd
 import skimage as ski
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
 from pipeline.helpers import (
@@ -21,6 +28,7 @@ from pipeline.helpers import (
     clean_transcript,
     fetch,
     generate_captions,
+    generate_spreadsheet_helper,
     generate_title,
 )
 
@@ -385,9 +393,121 @@ async def generate_output(pipeline: Pipeline, ctx: ProcessingContext) -> str:
     return path
 
 
+def compress_pdf(pipeline: Pipeline, input_path: str, quality="ebook") -> str:
+    """
+    Compresses a PDF file using Ghostscript.
+
+    Args:
+        input_path (str): Path to the input PDF file.
+        output_path (str): Path where the compressed PDF will be saved.
+        quality (str): Quality setting for compression ('screen', 'ebook',
+                       'printer', 'prepress'). 'ebook' is a good balance.
+    """
+    with TemporaryDirectory() as temp_dir:
+        output_path = os.path.join(
+            temp_dir, f"compressed_{os.path.basename(input_path)}"
+        )
+
+        gs_command = [
+            "gs",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            f"-dPDFSETTINGS=/{quality}",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={output_path}",
+            input_path,
+        ]
+
+        pipeline.report_progress("Compressing PDF", 0)
+
+        try:
+            subprocess.run(gs_command, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error during Ghostscript execution: {e}")
+            return input_path
+        except FileNotFoundError:
+            print("Ghostscript not found. Ensure it is installed and in your PATH.")
+            return input_path
+
+        shutil.move(output_path, input_path)
+        pipeline.report_progress("Compressing PDF", 1.0)
+
+    return input_path
+
+
+async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, str]:
+    pipeline.report_progress("Generating Excel Sheet", 0)
+
+    data = await generate_spreadsheet_helper(filename)
+
+    # Parse JSON data
+    json_data = json.loads(data)
+
+    # Extract rows from the JSON structure
+    if "rows" not in json_data or not isinstance(json_data["rows"], list):
+        raise ValueError("No 'rows' key found in JSON data")
+
+    rows = json_data["rows"]
+    if not rows:
+        raise ValueError("No rows found in JSON data")
+
+    # Convert to DataFrame
+    df = pd.DataFrame(rows)
+
+    # Generate output filename
+    base_name = os.path.splitext(os.path.basename(filename))[0]
+    output_filename = os.path.join(out_dir, f"{base_name}.xlsx")
+    os.makedirs(out_dir, exist_ok=True)
+
+    # Write to Excel
+    df.to_excel(output_filename, index=False, engine="openpyxl")
+
+    # Load workbook to apply formatting
+    wb = load_workbook(output_filename)
+    ws = wb.active
+    assert ws is not None, "Worksheet not found in the workbook"
+
+    # Apply formatting to all cells
+    for row_num in range(1, len(rows) + 2):  # +2 for header row
+        for col_num in range(1, len(df.columns) + 1):
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+            # Make header row bold
+            if row_num == 1:
+                cell.font = Font(bold=True, size=11)
+
+    # Auto-adjust column widths
+    for col_num in range(1, len(df.columns) + 1):
+        column_letter = get_column_letter(col_num)
+
+        # Calculate max length in column
+        max_length = 0
+        for cell in ws[column_letter]:
+            try:
+                if cell.value:
+                    # Limit to reasonable width
+                    cell_length = min(len(str(cell.value)), 100)
+                    max_length = max(max_length, cell_length)
+            except Exception:
+                pass
+
+        # Set column width (add a bit of padding)
+        adjusted_width = min(max_length + 2, 80)
+        ws.column_dimensions[column_letter].width = adjusted_width
+
+    # Save the formatted workbook
+    wb.save(output_filename)
+    pipeline.report_progress("Generating Excel Sheet", 1.0)
+
+    return filename, output_filename
+
+
 def create_pipeline(
     callback: Callable[[Pipeline, Progress], None],
-) -> Pipeline[ProcessingInput, str]:
+) -> Pipeline[ProcessingInput, tuple[str, str]]:
     pipeline = (
         Pipeline[ProcessingInput](callback)
         .add_stage(generate_context)
@@ -396,5 +516,7 @@ def create_pipeline(
         .add_stage(match_frames)
         .add_stage(transform_slides_with_ai)
         .add_stage(generate_output)
+        .add_stage(compress_pdf)
+        .add_stage(generate_spreadsheet)
     )
     return pipeline
