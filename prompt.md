@@ -11,20 +11,26 @@ Column headers for each disease:
 
 - Condition
 - Risk Factors
-- Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course
+- Etiology
 - Pathology
-- Clinical Symptoms/Prognosis/Recurrence
-- Diagnosis/Labs
-- Presentation/Biopsy/Histology
+- Pathophysiology
+- Clinical Presentation
+- Diagnosis / Key Findings
+- Histology Key Findings
+- Prognosis
 - Treatment
-- Step 1–style presentation/Vignette
-- Mnemonic/Etymology
+- Classic Step 1–Style Question Stem (e.g., "A x y/o patient presents with the following… what condition do they have?")
+- Photos from Lecture (describe any relevant images/diagrams from the lecture)
+- Additional Notes/Important Things
+- Mnemonic
 
-Step 1-style vignette: For each disease, provide a clinically plausible scenario using details from the lecture (see provided example for format).
+Classic Step 1–Style Question Stem: For each disease, provide a clinically plausible scenario using details from the lecture that tests recognition of the disease/syndrome.
 
 Pathophysiology: Summarize the key mechanisms and progression steps for the disease, reflecting content from the slides.
 
-Mnemonic/Etymology: Add relevant mnemonics or etymology for each disease, making sure they are accurate.
+Mnemonic: Add relevant mnemonics for each disease, making sure they are accurate.
+
+Photos from Lecture: Describe any relevant images, diagrams, or photos shown in the lecture slides.
 
 Formatting:
 
@@ -32,6 +38,6 @@ Formatting:
 - Use "Not specified in lecture" for missing/unclear information.
 
 Example Output Structure:
-| Condition | Risk Factors | Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course | Pathology | Clinical Symptoms/Prognosis/Recurrence | Diagnosis/Labs | Presentation/Biopsy/Histology | Treatment | Step 1–style presentation/Vignette | Mnemonic/Etymology |
-|------------|--------------|----------------------------------------------------------------------------|------------|----------------------------------------|----------------|--------------------------------|------------|----------------------------------|--------------------|
-| **Primary Biliary Cholangitis (PBC)** | More common in middle-aged women; associations include hypothyroidism and dyslipidemia | **Autoimmune destruction of intrahepatic bile ducts → cholestasis → leads to build-up of cholesterol and bilirubin in the blood → xanthasma (cholesterol deposits around eyes) and pruritis (itchy skin)** | Immune-mediated destruction of small intrahepatic bile ducts leading to progressive cholestasis; florid duct lesion (destruction with granuloma formation, lymphocytic infiltrate) | Classic triad: pruritus, profound fatigue, and jaundice (jaundice often late). Exam: scleral icterus, xanthelasma (cholesterol deposits), signs of chronic liver disease (splenomegaly, ascites) in advanced disease | Universally elevated ALP; anti-mitochondrial antibody (AMA) positive; often elevated IgM; bilirubin elevation indicates advanced disease | Biopsy: florid duct lesion — portal tract inflammation with lymphocytes, plasma cells, eosinophils, macrophages, and granulomas; bile duct infiltration by lymphocytes | Ursodeoxycholic acid is standard; newer agents mentioned: seladelpar and alifedrine (recently approved); liver transplant for severe disease | A 52-year-old woman with progressive pruritus and fatigue has markedly elevated ALP. AMA is positive and IgM elevated. Liver biopsy shows florid duct lesions with granulomas. **Diagnosis:** primary biliary cholangitis; start ursodeoxycholic acid. | **PBC → Primary Biliary Cholangitis** (formerly primary biliary cirrhosis); remember **AMA (Anti-Mitochondrial Antibody)** = hallmark |
+| Condition | Risk Factors | Etiology | Pathology | Pathophysiology | Clinical Presentation | Diagnosis / Key Findings | Histology Key Findings | Prognosis | Treatment | Classic Step 1–Style Question Stem | Photos from Lecture | Additional Notes/Important Things | Mnemonic |
+|-----------|--------------|----------|-----------|-----------------|----------------------|--------------------------|------------------------|-----------|-----------|-----------------------------------|---------------------|-----------------------------------|----------|
+| **Primary Biliary Cholangitis (PBC)** | More common in middle-aged women; associations include hypothyroidism and dyslipidemia | Autoimmune destruction of intrahepatic bile ducts | Immune-mediated destruction of small intrahepatic bile ducts leading to progressive cholestasis | Autoimmune destruction → cholestasis → build-up of cholesterol and bilirubin → xanthelasma (cholesterol deposits around eyes) and pruritus (itchy skin) | Classic triad: pruritus, profound fatigue, and jaundice (jaundice often late). Exam: scleral icterus, xanthelasma, signs of chronic liver disease (splenomegaly, ascites) in advanced disease | Universally elevated ALP; anti-mitochondrial antibody (AMA) positive; often elevated IgM; bilirubin elevation indicates advanced disease | Florid duct lesion — portal tract inflammation with lymphocytes, plasma cells, eosinophils, macrophages, and granulomas; bile duct infiltration by lymphocytes | Progressive; bilirubin elevation indicates advanced disease; liver transplant may be needed | Ursodeoxycholic acid is standard; newer agents: seladelpar and alifedrine (recently approved); liver transplant for severe disease | A 52-year-old woman with progressive pruritus and fatigue has markedly elevated ALP. AMA is positive and IgM elevated. Liver biopsy shows florid duct lesions with granulomas. What is the diagnosis? | Florid duct lesion image showing granulomatous inflammation | Remember AMA is virtually diagnostic; PBC was formerly called "primary biliary cirrhosis" | **AMA** = Anti-Mitochondrial Antibody = hallmark of PBC |

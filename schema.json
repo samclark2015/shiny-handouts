@@ -15,26 +15,34 @@
                 "required": [
                     "Condition",
                     "Risk Factors",
-                    "Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course",
+                    "Etiology",
                     "Pathology",
-                    "Clinical Symptoms/Prognosis/Recurrence",
-                    "Diagnosis/Labs",
-                    "Presentation/Biopsy/Histology",
+                    "Pathophysiology",
+                    "Clinical Presentation",
+                    "Diagnosis / Key Findings",
+                    "Histology Key Findings",
+                    "Prognosis",
                     "Treatment",
-                    "Step 1–style presentation/Vignette",
-                    "Mnemonic/Etymology"
+                    "Classic Step 1–Style Question Stem",
+                    "Photos from Lecture",
+                    "Additional Notes/Important Things",
+                    "Mnemonic"
                 ],
                 "properties": {
                     "Condition": { "type": "string" },
                     "Risk Factors": { "type": "string" },
-                    "Etiology → pathogenesis→disease→causes of symptoms→symptoms→disease course": { "type": "string" },
+                    "Etiology": { "type": "string" },
                     "Pathology": { "type": "string" },
-                    "Clinical Symptoms/Prognosis/Recurrence": { "type": "string" },
-                    "Diagnosis/Labs": { "type": "string" },
-                    "Presentation/Biopsy/Histology": { "type": "string" },
+                    "Pathophysiology": { "type": "string" },
+                    "Clinical Presentation": { "type": "string" },
+                    "Diagnosis / Key Findings": { "type": "string" },
+                    "Histology Key Findings": { "type": "string" },
+                    "Prognosis": { "type": "string" },
                     "Treatment": { "type": "string" },
-                    "Step 1–style presentation/Vignette": { "type": "string" },
-                    "Mnemonic/Etymology": { "type": "string" }
+                    "Classic Step 1–Style Question Stem": { "type": "string" },
+                    "Photos from Lecture": { "type": "string" },
+                    "Additional Notes/Important Things": { "type": "string" },
+                    "Mnemonic": { "type": "string" }
                 }
             }
         }
