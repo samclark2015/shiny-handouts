@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -17,7 +18,8 @@ import m3u8
 import pandas as pd
 import skimage as ski
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from openpyxl import load_workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
@@ -36,6 +38,53 @@ from .pipeline import Pipeline, PipelineFailure, Progress
 
 in_dir = os.path.join("data", "input")
 out_dir = os.path.join("data", "output")
+
+
+def parse_markdown_bold_to_rich_text(text: str) -> CellRichText | str:
+    """
+    Parse Markdown bold syntax (**text**) and convert to Excel rich text.
+    Returns CellRichText if bold markers are found, otherwise returns the original string.
+    """
+    if not text or not isinstance(text, str):
+        return text or ""
+
+    # Pattern to match **bold** text
+    pattern = r"\*\*(.+?)\*\*"
+
+    # Check if there are any bold markers
+    if not re.search(pattern, text):
+        return text
+
+    # Split text into parts (bold and non-bold)
+    parts = []
+    last_end = 0
+
+    for match in re.finditer(pattern, text):
+        # Add non-bold text before this match
+        if match.start() > last_end:
+            non_bold_text = text[last_end : match.start()]
+            if non_bold_text:
+                parts.append(non_bold_text)
+
+        # Add bold text
+        bold_text = match.group(1)
+        if bold_text:
+            bold_font = InlineFont(b=True)
+            parts.append(TextBlock(bold_font, bold_text))
+
+        last_end = match.end()
+
+    # Add any remaining non-bold text after the last match
+    if last_end < len(text):
+        remaining_text = text[last_end:]
+        if remaining_text:
+            parts.append(remaining_text)
+
+    # Return CellRichText if we have parts, otherwise original text
+    if parts:
+        return CellRichText(parts)
+    return text
+
 
 PanoptoInput = namedtuple("PanoptoInput", ["base", "cookie", "delivery_id"])
 
@@ -461,23 +510,27 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
     output_filename = os.path.join(out_dir, f"{base_name}.xlsx")
     os.makedirs(out_dir, exist_ok=True)
 
-    # Write to Excel
-    df.to_excel(output_filename, index=False, engine="openpyxl")
+    # Write to Excel with rich text support for Markdown bold
+    from openpyxl import Workbook
 
-    # Load workbook to apply formatting
-    wb = load_workbook(output_filename)
+    wb = Workbook()
     ws = wb.active
     assert ws is not None, "Worksheet not found in the workbook"
 
-    # Apply formatting to all cells
-    for row_num in range(1, len(rows) + 2):  # +2 for header row
-        for col_num in range(1, len(df.columns) + 1):
-            cell = ws.cell(row=row_num, column=col_num)
-            cell.alignment = Alignment(wrap_text=True, vertical="top")
+    # Write header row
+    for col_num, column_name in enumerate(df.columns, 1):
+        cell = ws.cell(row=1, column=col_num, value=column_name)
+        cell.font = Font(bold=True, size=11)
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-            # Make header row bold
-            if row_num == 1:
-                cell.font = Font(bold=True, size=11)
+    # Write data rows with Markdown bold parsing
+    for row_num, row_data in enumerate(rows, 2):  # Start from row 2 (after header)
+        for col_num, column_name in enumerate(df.columns, 1):
+            cell_value = row_data.get(column_name, "")
+            rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
+            cell = ws.cell(row=row_num, column=col_num)
+            cell.value = rich_text_value
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
 
     # Auto-adjust column widths
     for col_num in range(1, len(df.columns) + 1):

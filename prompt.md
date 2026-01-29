@@ -36,6 +36,7 @@ Formatting:
 
 - Table with one illness per row under the columns above, grouped by disease type as specified.
 - Use "Not specified in lecture" for missing/unclear information.
+- **Use Markdown bold syntax (`**keyword**`) to highlight important keywords, key terms, disease names, drug names, lab values, and diagnostic findings throughout all cells.** This formatting will be preserved in the final Excel output.
 
 Example Output Structure:
 | Condition | Risk Factors | Etiology | Pathology | Pathophysiology | Clinical Presentation | Diagnosis / Key Findings | Histology Key Findings | Prognosis | Treatment | Classic Step 1–Style Question Stem | Photos from Lecture | Additional Notes/Important Things | Mnemonic |
