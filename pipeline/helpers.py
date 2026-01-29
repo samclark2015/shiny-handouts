@@ -307,7 +307,7 @@ Formatting:
 
     client = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 
-    response = client.chat(
+    response = await client.chat_async(
         content_pdf_file(filename),
         echo="none",
         stream=False,
@@ -322,5 +322,5 @@ Formatting:
         },
     )
 
-    data = response.get_content()
+    data = await response.get_content()
     return data
