@@ -15,12 +15,11 @@ Caption = namedtuple("Caption", ("text", "timestamp"))
 Slide = namedtuple("Slide", ("image", "caption", "extra"))
 Progress = namedtuple("Progress", ("stage", "complete", "total"))
 
-FAST_MODEL = "gpt-5-nano"
-SMART_MODEL = "gpt-5-nano"
+FAST_MODEL = "gpt-4.1-nano"
+SMART_MODEL = "gpt-5-mini"
 
 key = os.environ["OPENAI_API_KEY"]
 
-# client = ollama.AsyncClient()
 client = AsyncOpenAI(api_key=key)
 
 
