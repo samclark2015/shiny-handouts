@@ -32,6 +32,7 @@ from pipeline.helpers import (
     generate_captions,
     generate_spreadsheet_helper,
     generate_title,
+    generate_vignette_questions,
 )
 
 from .pipeline import Pipeline, PipelineFailure, Progress
@@ -491,7 +492,7 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
 
     data = await generate_spreadsheet_helper(filename)
 
-    # Parse JSON data
+    # Parse JSON data for main spreadsheet
     json_data = json.loads(data)
 
     # Extract rows from the JSON structure
@@ -516,6 +517,7 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
     wb = Workbook()
     ws = wb.active
     assert ws is not None, "Worksheet not found in the workbook"
+    ws.title = "Study Table"
 
     # Write header row
     for col_num, column_name in enumerate(df.columns, 1):
@@ -532,7 +534,7 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
             cell.value = rich_text_value
             cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-    # Auto-adjust column widths
+    # Auto-adjust column widths for study table
     for col_num in range(1, len(df.columns) + 1):
         column_letter = get_column_letter(col_num)
 
@@ -558,9 +560,60 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
     return filename, output_filename
 
 
+async def generate_vignette_pdf(
+    pipeline: Pipeline, inputs: tuple[str, str]
+) -> tuple[str, str, str]:
+    """Generate a PDF with vignette questions for each learning objective."""
+    pdf_filename, xlsx_filename = inputs
+    pipeline.report_progress("Generating Vignette Questions", 0)
+
+    # Generate vignette questions from the PDF
+    vignette_data = await generate_vignette_questions(pdf_filename)
+
+    pipeline.report_progress("Generating Vignette Questions", 0.5)
+
+    # Parse the JSON response
+    try:
+        vignette_json = json.loads(vignette_data)
+        learning_objectives = vignette_json.get("learning_objectives", [])
+    except json.JSONDecodeError as e:
+        raise PipelineFailure(f"Failed to parse vignette questions: {e}")
+
+    if not learning_objectives:
+        raise PipelineFailure("No learning objectives found in the lecture")
+
+    # Render the HTML template
+    template_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "templates"
+    )
+    env = Environment(
+        loader=FileSystemLoader(template_path), autoescape=select_autoescape()
+    )
+    template = env.get_template("vignette.html")
+
+    html = template.render(learning_objectives=learning_objectives)
+
+    # Generate output filename
+    base_name = os.path.splitext(os.path.basename(pdf_filename))[0]
+    vignette_pdf_path = os.path.join(out_dir, f"{base_name} - Vignette Questions.pdf")
+    os.makedirs(out_dir, exist_ok=True)
+
+    pipeline.report_progress("Generating Vignette PDF", 0.7)
+
+    # Generate the PDF
+    with open(vignette_pdf_path, "wb") as f:
+        pisa_status = pisa.CreatePDF(html, dest=f)
+        if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+            raise PipelineFailure("Error generating vignette PDF")
+
+    pipeline.report_progress("Generating Vignette PDF", 1.0)
+
+    return pdf_filename, xlsx_filename, vignette_pdf_path
+
+
 def create_pipeline(
     callback: Callable[[Pipeline, Progress], None],
-) -> Pipeline[ProcessingInput, tuple[str, str]]:
+) -> Pipeline[ProcessingInput, tuple[str, str, str]]:
     pipeline = (
         Pipeline[ProcessingInput](callback)
         .add_stage(generate_context)
@@ -571,5 +624,6 @@ def create_pipeline(
         .add_stage(generate_output)
         .add_stage(compress_pdf)
         .add_stage(generate_spreadsheet)
+        .add_stage(generate_vignette_pdf)
     )
     return pipeline
