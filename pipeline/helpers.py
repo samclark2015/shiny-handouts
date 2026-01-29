@@ -15,8 +15,10 @@ Caption = namedtuple("Caption", ("text", "timestamp"))
 Slide = namedtuple("Slide", ("image", "caption", "extra"))
 Progress = namedtuple("Progress", ("stage", "complete", "total"))
 
+FAST_MODEL = "gpt-5-nano"
+SMART_MODEL = "gpt-5-nano"
+
 key = os.environ["OPENAI_API_KEY"]
-model = "gpt-4o-mini"
 
 # client = ollama.AsyncClient()
 client = AsyncOpenAI(api_key=key)
@@ -38,7 +40,7 @@ async def generate_captions(video_path: str) -> list[Caption]:
         model="whisper-1",
         response_format="verbose_json",
         timestamp_granularities=["segment"],
-        language="en"
+        language="en",
     )
 
     segs = resp.segments
@@ -63,7 +65,7 @@ async def clean_transcript(content: str) -> str:
     #     ollama.Message(role="user", content=prompt)
     # ])
     resp = await client.chat.completions.create(
-        model=model, messages=[{"role": "user", "content": prompt}]
+        model=FAST_MODEL, messages=[{"role": "user", "content": prompt}]
     )
 
     # return resp["message"]["content"]
@@ -81,7 +83,7 @@ async def gen_keypoints(content: str, slide_path: str) -> str:
     # ])
     # resp = await client.generate(model, prompt=prompt)
     resp = await client.chat.completions.create(
-        model=model,
+        model=SMART_MODEL,
         messages=[
             {"role": "system", "content": prompt},
             {
@@ -103,7 +105,7 @@ async def gen_keypoints(content: str, slide_path: str) -> str:
 
 async def generate_title(html: str) -> str:
     resp = await client.chat.completions.create(
-        model=model,
+        model=FAST_MODEL,
         messages=[
             {
                 "role": "user",
@@ -146,8 +148,11 @@ def get_file_hash(filename, algorithm="sha256", block_size=65536):
             hasher.update(chunk)
     return hasher.hexdigest()
 
+
 def fetch(base: str, cookie: str, url: str, params: dict[str, str] = {}):
-    return requests.get(f"{base}/{url}", cookies={".ASPXAUTH": cookie}, params=params).json()
+    return requests.get(
+        f"{base}/{url}", cookies={".ASPXAUTH": cookie}, params=params
+    ).json()
 
 
 def read_file(filename: str) -> str:
@@ -159,10 +164,11 @@ async def generate_spreadsheet_helper(filename: str) -> str:
     prompt = read_file("prompt.md")
     schema = json.load(open("schema.json", "r", encoding="utf-8"))
 
-    client = ChatOpenAI(api_key=key, model=model, system_prompt=prompt)
+    client = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 
     response = client.chat(
         content_pdf_file(filename),
+        echo="none",
         stream=False,
         kwargs={
             "text": {
