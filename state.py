@@ -37,12 +37,12 @@ class Task:
     def run(self, pipeline_input: ProcessingInput):
         pipeline = create_pipeline(self.callback)
         global_state.tasks.append(self)
-        self.aio_task = aio_task = aio.create_task(pipeline.run(pipeline_input))
+        self._aio_task = aio_task = aio.create_task(pipeline.run(pipeline_input))
         aio_task.add_done_callback(self.when_complete)
 
     def remove(self):
-        if self.aio_task:
-            self.aio_task.cancel("Cancelled by user")
+        if self._aio_task:
+            self._aio_task.cancel("Cancelled by user")
         global_state.tasks.remove(self)
 
 

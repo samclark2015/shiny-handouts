@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, cast
 
@@ -24,6 +25,8 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         ] = []
         self._callback = callback
         self._current_stage: int | None = None
+        self._logger = logging.getLogger(__name__)
+        self._loop = asyncio.get_event_loop()
 
     def _wrap_sync(
         self, stage: Callable[["Pipeline", PipelineOut], Any]
@@ -33,9 +36,7 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         """
 
         async def wrapped_stage(pipeline: Pipeline, data: PipelineOut) -> Any:
-            return await asyncio.get_event_loop().run_in_executor(
-                None, stage, pipeline, data
-            )
+            return await self._loop.run_in_executor(None, stage, pipeline, data)
 
         wrapped_stage.__name__ = stage.__name__
 
@@ -53,20 +54,36 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
         self._stages.append(stage)
         return cast(Pipeline[PipelineIn, StageOut], self)
 
-    async def run(self, data: PipelineIn) -> PipelineOut | PipelineFailure:
+    async def run(
+        self, data: PipelineIn, throw: bool = False
+    ) -> PipelineOut | PipelineFailure:
         """
         Run the pipeline with the given input data.
         Returns the final output after all stages have been applied.
         """
+        if self._loop != asyncio.get_event_loop():
+            raise RuntimeError(
+                "Pipeline run called from a different event loop that it was created"
+            )
+
         current_data: Any = data
         for i, stage in enumerate(self._stages):
             try:
                 self._current_stage = i
                 current_data = await stage(self, current_data)
             except PipelineFailure as e:
+                self._logger.error(
+                    f"Pipeline failed at stage {stage.__name__}: {e.message}"
+                )
+                if throw:
+                    raise
                 return e
             except Exception as e:
-                return PipelineFailure(f"Error in stage {stage.__name__}: {e}")
+                message = f"Error in pipeline stage {stage.__name__}: {e}"
+                self._logger.exception(message)
+                if throw:
+                    raise
+                return PipelineFailure(message)
             finally:
                 self._current_stage = None
         self._current_stage = len(self._stages)
@@ -88,7 +105,9 @@ class Pipeline[PipelineIn, PipelineOut = PipelineIn]:
             complete += 1.0 / total * progress
 
         if self._callback:
-            self._callback(self, Progress(message, complete))
+            self._loop.call_soon_threadsafe(
+                self._callback, self, Progress(message, complete)
+            )
 
     def set_callback(self, callback: Callable[["Pipeline", Progress], None]) -> None:
         self._callback = callback
