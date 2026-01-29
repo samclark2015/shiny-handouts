@@ -1,0 +1,1 @@
+From the HTML content, generate an appropriate title for the file. Only output the title, do not say anything like 'Here is the title' in the beginning. Do not include any HTML tags or a file extension.

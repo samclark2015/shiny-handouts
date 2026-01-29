@@ -23,16 +23,14 @@ from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
-from pipeline.helpers import (
-    Caption,
-    Slide,
+from pipeline.ai import (
     clean_transcript,
-    fetch,
     generate_captions,
     generate_spreadsheet_helper,
     generate_title,
     generate_vignette_questions,
 )
+from pipeline.helpers import Caption, Slide, fetch
 
 from .pipeline import Pipeline, PipelineFailure, Progress
 

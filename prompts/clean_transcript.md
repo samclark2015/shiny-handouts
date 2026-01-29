@@ -1,0 +1,1 @@
+Clean up this voice transcription. Remove any filler words, typos and correct any words that is not in the context. If I correct myself, only include the corrected version. Only output the cleaned transcript, do not say anything like 'Here is the cleaned up transcript' in the beginning. Transcript start after the '---' line.
