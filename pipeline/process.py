@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import re
 import shutil
@@ -490,18 +489,14 @@ def compress_pdf(pipeline: Pipeline, input_path: str, quality="ebook") -> str:
 async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, str]:
     pipeline.report_progress("Generating Excel Sheet", 0)
 
-    data = await generate_spreadsheet_helper(filename)
+    study_table = await generate_spreadsheet_helper(filename)
 
-    # Parse JSON data for main spreadsheet
-    json_data = json.loads(data)
+    # Extract rows from the Pydantic model
+    if not study_table.rows:
+        raise ValueError("No rows found in data")
 
-    # Extract rows from the JSON structure
-    if "rows" not in json_data or not isinstance(json_data["rows"], list):
-        raise ValueError("No 'rows' key found in JSON data")
-
-    rows = json_data["rows"]
-    if not rows:
-        raise ValueError("No rows found in JSON data")
+    # Convert Pydantic models to dicts for DataFrame/Excel processing
+    rows = [row.model_dump(by_alias=True) for row in study_table.rows]
 
     # Convert to DataFrame
     df = pd.DataFrame(rows)
@@ -572,15 +567,12 @@ async def generate_vignette_pdf(
 
     pipeline.report_progress("Generating Vignette Questions", 0.5)
 
-    # Parse the JSON response
-    try:
-        vignette_json = json.loads(vignette_data)
-        learning_objectives = vignette_json.get("learning_objectives", [])
-    except json.JSONDecodeError as e:
-        raise PipelineFailure(f"Failed to parse vignette questions: {e}")
-
-    if not learning_objectives:
+    # Extract learning objectives from the Pydantic model
+    if not vignette_data.learning_objectives:
         raise PipelineFailure("No learning objectives found in the lecture")
+
+    # Convert to dicts for template rendering
+    learning_objectives = [lo.model_dump() for lo in vignette_data.learning_objectives]
 
     # Render the HTML template
     template_path = os.path.join(

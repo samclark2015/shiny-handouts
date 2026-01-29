@@ -1,6 +1,5 @@
 import base64
 import hashlib
-import json
 import mimetypes
 import os
 from collections import namedtuple
@@ -10,6 +9,8 @@ import requests
 from chatlas import ChatOpenAI, content_pdf_file
 from openai import AsyncOpenAI
 from pydub import AudioSegment
+
+from .schemas import StudyTable, VignetteQuestions
 
 Caption = namedtuple("Caption", ("text", "timestamp"))
 Slide = namedtuple("Slide", ("image", "caption", "extra"))
@@ -159,32 +160,21 @@ def read_file(filename: str) -> str:
         return f.read()
 
 
-async def generate_spreadsheet_helper(filename: str) -> str:
+async def generate_spreadsheet_helper(filename: str) -> StudyTable:
+    """Generate a study table from a PDF file."""
     prompt = read_file("prompt.md")
-    schema = json.load(open("schema.json", "r", encoding="utf-8"))
 
-    client = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
+    chat = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 
-    response = await client.chat_async(
+    result = await chat.chat_structured_async(
         content_pdf_file(filename),
-        echo="none",
-        stream=False,
-        kwargs={
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "spreadsheet_schema",
-                    "schema": schema,
-                }
-            }
-        },
+        data_model=StudyTable,
     )
 
-    data = await response.get_content()
-    return data
+    return result
 
 
-async def generate_vignette_questions(filename: str) -> str:
+async def generate_vignette_questions(filename: str) -> VignetteQuestions:
     """Generate 2-3 step-style vignette multiple choice questions for each learning objective."""
     prompt = """You are assisting medical students by creating Step 1-style vignette questions based on lecture content.
 
@@ -228,99 +218,11 @@ Formatting:
 - Number questions sequentially within each learning objective
 - Include difficulty level (Easy/Medium/Hard) for each question"""
 
-    schema = {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "title": "Vignette Questions",
-        "type": "object",
-        "additionalProperties": False,
-        "required": ["learning_objectives"],
-        "properties": {
-            "learning_objectives": {
-                "type": "array",
-                "description": "Array of learning objectives with their associated vignette questions",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": False,
-                    "required": ["objective", "questions"],
-                    "properties": {
-                        "objective": {
-                            "type": "string",
-                            "description": "The learning objective from the lecture",
-                        },
-                        "questions": {
-                            "type": "array",
-                            "description": "2-3 vignette questions for this learning objective",
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": [
-                                    "question_number",
-                                    "difficulty",
-                                    "vignette",
-                                    "question",
-                                    "choices",
-                                    "correct_answer",
-                                    "explanation",
-                                ],
-                                "properties": {
-                                    "question_number": {"type": "integer"},
-                                    "difficulty": {
-                                        "type": "string",
-                                        "enum": ["Easy", "Medium", "Hard"],
-                                    },
-                                    "vignette": {
-                                        "type": "string",
-                                        "description": "The clinical scenario/stem",
-                                    },
-                                    "question": {
-                                        "type": "string",
-                                        "description": "The actual question being asked",
-                                    },
-                                    "choices": {
-                                        "type": "object",
-                                        "additionalProperties": False,
-                                        "required": ["A", "B", "C", "D", "E"],
-                                        "properties": {
-                                            "A": {"type": "string"},
-                                            "B": {"type": "string"},
-                                            "C": {"type": "string"},
-                                            "D": {"type": "string"},
-                                            "E": {"type": "string"},
-                                        },
-                                    },
-                                    "correct_answer": {
-                                        "type": "string",
-                                        "enum": ["A", "B", "C", "D", "E"],
-                                    },
-                                    "explanation": {
-                                        "type": "string",
-                                        "description": "Explanation of why the correct answer is right and why distractors are wrong",
-                                    },
-                                },
-                            },
-                        },
-                    },
-                },
-            }
-        },
-    }
+    chat = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 
-    client = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
-
-    response = await client.chat_async(
+    result = await chat.chat_structured_async(
         content_pdf_file(filename),
-        echo="none",
-        stream=False,
-        kwargs={
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "vignette_questions_schema",
-                    "schema": schema,
-                }
-            }
-        },
+        data_model=VignetteQuestions,
     )
 
-    data = await response.get_content()
-    return data
+    return result
