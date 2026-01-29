@@ -1,12 +1,11 @@
 import base64
 import hashlib
-import mimetypes
 import os
 from collections import namedtuple
 from io import BytesIO
 
 import requests
-from chatlas import ChatOpenAI, content_pdf_file
+from chatlas import ChatOpenAI, content_image_file, content_pdf_file
 from openai import AsyncOpenAI
 from pydub import AudioSegment
 
@@ -21,7 +20,8 @@ SMART_MODEL = "gpt-5-mini"
 
 key = os.environ["OPENAI_API_KEY"]
 
-client = AsyncOpenAI(api_key=key)
+# OpenAI client kept only for audio transcription (Whisper)
+whisper_client = AsyncOpenAI(api_key=key)
 
 
 async def generate_captions(video_path: str) -> list[Caption]:
@@ -35,7 +35,7 @@ async def generate_captions(video_path: str) -> list[Caption]:
 
     output.seek(0)
     output.name = "audio.mp3"
-    resp = await client.audio.transcriptions.create(
+    resp = await whisper_client.audio.transcriptions.create(
         file=output,
         model="whisper-1",
         response_format="verbose_json",
@@ -51,74 +51,34 @@ async def generate_captions(video_path: str) -> list[Caption]:
     return captions
 
 
-def encode_image(image_path: str):
-    with open(image_path, "rb") as image_file:
-        return base64.b64encode(image_file.read()).decode("utf-8")
-
-
 async def clean_transcript(content: str) -> str:
     prompt = f"""Clean up this voice transcription. Remove any filler words, typos and correct any words that is not in the context. If I correct myself, only include the corrected version. Only output the cleaned transcript, do not say anything like 'Here is the cleaned up transcript' in the beginning. Transcript start after the '---' line.
 ---
 {content}"""
 
-    # resp = ollama.chat(model, [
-    #     ollama.Message(role="user", content=prompt)
-    # ])
-    resp = await client.chat.completions.create(
-        model=FAST_MODEL, messages=[{"role": "user", "content": prompt}]
-    )
-
-    # return resp["message"]["content"]
-    # return resp["response"]
-    return resp.choices[0].message.content or ""
+    chat = ChatOpenAI(api_key=key, model=FAST_MODEL)
+    response = await chat.chat_async(prompt, echo="none")
+    return await response.get_content()
 
 
 async def gen_keypoints(content: str, slide_path: str) -> str:
     prompt = "Generate a bulleted list of key points from a voice transcription and attached slide. Only output the key points, do not say anything like 'Here are some key points' in the beginning"
 
-    mimetype = mimetypes.guess_type(slide_path)
-    slide_data = encode_image(slide_path)
-    # resp = ollama.chat(model, [
-    #     ollama.Message(role="user", content=prompt)
-    # ])
-    # resp = await client.generate(model, prompt=prompt)
-    resp = await client.chat.completions.create(
-        model=SMART_MODEL,
-        messages=[
-            {"role": "system", "content": prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Transcript:\n\n{content}"},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{mimetype};base64,{slide_data}"},
-                    },
-                ],
-            },
-        ],
+    chat = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
+    response = await chat.chat_async(
+        f"Transcript:\n\n{content}",
+        content_image_file(slide_path, resize="high"),
+        echo="none",
     )
-    # return resp["message"]["content"]
-    return resp.choices[0].message.content or ""
-    # return resp["response"]
+    return await response.get_content()
 
 
 async def generate_title(html: str) -> str:
-    resp = await client.chat.completions.create(
-        model=FAST_MODEL,
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"From the HTML content, generate an appropriate title for the fil. Only output the title, do not say anything like 'Here is the title' in the beginning. Do not include any HTML tags or a file extension.\nHTML:\n\n{html}",
-                    },
-                ],
-            }
-        ],
-    )
-    return resp.choices[0].message.content or ""
+    prompt = f"From the HTML content, generate an appropriate title for the file. Only output the title, do not say anything like 'Here is the title' in the beginning. Do not include any HTML tags or a file extension.\nHTML:\n\n{html}"
+
+    chat = ChatOpenAI(api_key=key, model=FAST_MODEL)
+    response = await chat.chat_async(prompt, echo="none")
+    return await response.get_content()
 
 
 def get_file_hash(filename, algorithm="sha256", block_size=65536):
