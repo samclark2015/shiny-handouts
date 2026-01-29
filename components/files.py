@@ -15,8 +15,16 @@ def files_component():
     )
     with ui.column().classes("w-full"):
         for file in files:
+            ext = file.suffix.lower()
+            match ext:
+                case ".pdf":
+                    file_type = "PDF"
+                case ".xlsx" | ".xls":
+                    file_type = "Excel"
+                case x:
+                    file_type = x.upper()
             ui.link(
-                f"{file.stem} (created {time.strftime('%-m/%-d/%Y %-I:%M %p', time.localtime(file.stat(follow_symlinks=True).st_ctime))})",
+                f"{file.stem} ({file_type}) (created {time.strftime('%-m/%-d/%Y %-I:%M %p', time.localtime(file.stat(follow_symlinks=True).st_ctime))})",
                 target=f"data/output/{file.name}",
                 new_tab=True,
             )
