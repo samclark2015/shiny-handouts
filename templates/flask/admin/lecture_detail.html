@@ -79,8 +79,15 @@
         <!-- Lecture Info Card -->
         <div class="bg-white rounded-lg shadow mb-8">
             <div class="px-6 py-4 border-b border-gray-200">
-                <h2 class="text-xl font-semibold text-gray-900">{{ lecture.title }}</h2>
-                <p class="text-sm text-gray-500">
+                <form action="{{ url_for('admin.rename_lecture', lecture_id=lecture.id) }}" method="POST" class="flex items-center gap-2">
+                    <input type="text" name="title" value="{{ lecture.title }}" 
+                           class="text-xl font-semibold text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1">
+                    <button type="submit" 
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                        Rename
+                    </button>
+                </form>
+                <p class="text-sm text-gray-500 mt-1">
                     by <a href="{{ url_for('admin.user_detail', user_id=lecture.user_id) }}" 
                           class="text-blue-600 hover:text-blue-800">{{ lecture.user.name }}</a>
                 </p>
@@ -141,24 +148,31 @@
             {% if lecture.artifacts %}
                 <div class="divide-y divide-gray-200">
                     {% for artifact in lecture.artifacts %}
-                        <div class="px-6 py-4 flex justify-between items-center hover:bg-gray-50">
-                            <div>
-                                <p class="font-medium text-gray-900">{{ artifact.file_name }}</p>
-                                <p class="text-sm text-gray-500">
-                                    {{ artifact.artifact_type.value }} 
-                                    {% if artifact.file_size %}
-                                        • {{ (artifact.file_size / 1024)|round(1) }} KB
-                                    {% endif %}
-                                </p>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
-                                    {{ artifact.artifact_type.value }}
-                                </span>
-                                <span class="text-xs text-gray-400">
-                                    {{ artifact.created_at.strftime('%Y-%m-%d %H:%M') }}
-                                </span>
-                            </div>
+                        <div class="px-6 py-4 hover:bg-gray-50">
+                            <form action="{{ url_for('admin.rename_artifact', artifact_id=artifact.id) }}" method="POST" class="flex items-center gap-2">
+                                <div class="flex-1">
+                                    <input type="text" name="file_name" value="{{ artifact.file_name }}" 
+                                           class="font-medium text-gray-900 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 w-full">
+                                    <p class="text-sm text-gray-500 mt-1">
+                                        {{ artifact.artifact_type.value }} 
+                                        {% if artifact.file_size %}
+                                            • {{ (artifact.file_size / 1024)|round(1) }} KB
+                                        {% endif %}
+                                    </p>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <button type="submit" 
+                                            class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+                                        Rename
+                                    </button>
+                                    <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">
+                                        {{ artifact.artifact_type.value }}
+                                    </span>
+                                    <span class="text-xs text-gray-400">
+                                        {{ artifact.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </span>
+                                </div>
+                            </form>
                         </div>
                     {% endfor %}
                 </div>

@@ -245,3 +245,45 @@ def delete_lecture(lecture_id: int):
 
     flash(f"Lecture '{title}' has been deleted.", "success")
     return redirect(url_for("admin.lectures"))
+
+
+@admin_bp.route("/lectures/<int:lecture_id>/rename", methods=["POST"])
+@admin_required
+def rename_lecture(lecture_id: int):
+    """Rename a lecture."""
+    lecture = db.session.get(Lecture, lecture_id)
+    if not lecture:
+        abort(404)
+
+    new_title = request.form.get("title", "").strip()
+    if not new_title:
+        flash("Title cannot be empty.", "error")
+        return redirect(url_for("admin.lecture_detail", lecture_id=lecture_id))
+
+    old_title = lecture.title
+    lecture.title = new_title
+    db.session.commit()
+
+    flash(f"Lecture renamed from '{old_title}' to '{new_title}'.", "success")
+    return redirect(url_for("admin.lecture_detail", lecture_id=lecture_id))
+
+
+@admin_bp.route("/artifacts/<int:artifact_id>/rename", methods=["POST"])
+@admin_required
+def rename_artifact(artifact_id: int):
+    """Rename an artifact."""
+    artifact = db.session.get(Artifact, artifact_id)
+    if not artifact:
+        abort(404)
+
+    new_name = request.form.get("file_name", "").strip()
+    if not new_name:
+        flash("File name cannot be empty.", "error")
+        return redirect(url_for("admin.lecture_detail", lecture_id=artifact.lecture_id))
+
+    old_name = artifact.file_name
+    artifact.file_name = new_name
+    db.session.commit()
+
+    flash(f"Artifact renamed from '{old_name}' to '{new_name}'.", "success")
+    return redirect(url_for("admin.lecture_detail", lecture_id=artifact.lecture_id))
