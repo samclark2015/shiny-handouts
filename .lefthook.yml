@@ -1,7 +1,7 @@
 pre-commit:
   commands:
     Freeze UV Dependencies:
-      run: uv export --format requirements.txt --no-dev > requirements.txt && uv export --format requirements.txt --dev-only > requirements-dev.txt
+      run: uv export --format requirements.txt --no-dev > requirements.txt && uv export --format requirements.txt --dev > requirements-dev.txt
       stage_fixed: true
       glob:
         - requirements-dev.txt

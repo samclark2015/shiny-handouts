@@ -1083,11 +1083,12 @@ pyyaml==6.0.2 \
     --hash=sha256:d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e \
     --hash=sha256:efdca5630322a10774e8e98e1af481aad470dd62c3170801852d752aa7a783ba
     # via pyhanko
-redis==7.1.0 \
-    --hash=sha256:23c52b208f92b56103e17c5d06bdc1a6c2c0b3106583985a76a18f83b265de2b \
-    --hash=sha256:b1cc3cfa5a2cb9c2ab3ba700864fb0ad75617b41f01352ce5779dabf6d5f9c3c
+redis==6.4.0 \
+    --hash=sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010 \
+    --hash=sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f
     # via
     #   shiny-handouts
+    #   taskiq-cancellation
     #   taskiq-redis
 reportlab==4.4.3 \
     --hash=sha256:073b0975dab69536acd3251858e6b0524ed3e087e71f1d0d1895acb50acf9c7b \
@@ -1199,8 +1200,13 @@ taskiq==0.12.1 \
     --hash=sha256:a8ade45e2e23edbadb972a88dec44e68c7daef83383d01fa3af48594a24a712a
     # via
     #   shiny-handouts
+    #   taskiq-cancellation
     #   taskiq-pipelines
     #   taskiq-redis
+taskiq-cancellation==0.0.1 \
+    --hash=sha256:0f3e8cb37e67e973f406124b93fdc7000d720a12f0187344a37e04dd3f195085 \
+    --hash=sha256:1fe60a4213b8c3189f3519db3ca8379d66f389858229e3250dc4425154d442f8
+    # via shiny-handouts
 taskiq-dependencies==1.5.7 \
     --hash=sha256:0d3b240872ef152b719153b9526d866d2be978aeeaea6600e878414babc2dcb4 \
     --hash=sha256:6fcee5d159bdb035ef915d4d848826169b6f06fe57cc2297a39b62ea3e76036f
@@ -1209,9 +1215,9 @@ taskiq-pipelines==0.1.4 \
     --hash=sha256:09b4999f79e74552e4a751f4670c1829eaf494a28ee06d3f47ec5f6f5bf5105d \
     --hash=sha256:0ccc58a7d5bc0f19457bf25aec6e8b3d82ce5e63ae4416bc85b47f027aede84b
     # via shiny-handouts
-taskiq-redis==1.2.1 \
-    --hash=sha256:8a6b7d3187798e00f27fca6d4a9d73efc559ed88e3c3c571647c9163add7af47 \
-    --hash=sha256:caf91241a23cd77c4304e455a775caa08c5005b48b62fc613b4dd5b44a515488
+taskiq-redis==1.1.2 \
+    --hash=sha256:3b69468ff99da33243314c84acfa137a4a014abad10dd44e62195bc5e4ae9947 \
+    --hash=sha256:f878a047abc1a0fa0ddda6e4b063d742f030858d5a4409de96261a00a992c9c9
     # via shiny-handouts
 tifffile==2025.6.11 \
     --hash=sha256:0ece4c2e7a10656957d568a093b07513c0728d30c1bd8cc12725901fffdb7143 \
