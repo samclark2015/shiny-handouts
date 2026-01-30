@@ -25,5 +25,5 @@ services:
       - ./data:/app/data
       - ./src:/app/src
     command: >
-      python -m taskiq worker core.taskiq_app:broker
+      python -m taskiq worker core.tasks:broker
       --workers 2

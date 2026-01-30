@@ -25,6 +25,8 @@ RUN if [ "$DEV_MODE" = "true" ]; then pip install --no-cache-dir -r /app/require
 
 # Copy application code
 COPY ./src /app/src
+COPY ./prompts /app/prompts
+COPY ./templates /app/templates
 
 # Create data directories
 RUN mkdir -p /app/data/input /app/data/output /app/data/frames /app/data/cache

@@ -14,7 +14,7 @@ def index(request):
     # Get user's active jobs only
     jobs = (
         Job.objects.filter(user=request.user)
-        .filter(status__in=[JobStatus.PENDING, JobStatus.RUNNING])
+        .filter(status__in=[JobStatus.PENDING, JobStatus.RUNNING, JobStatus.FAILED])
         .order_by("-created_at")[:50]
     )
 

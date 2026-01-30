@@ -14,6 +14,7 @@ dependencies = [
     "taskiq>=0.11",
     "taskiq-redis>=1.0",
     "taskiq-pipelines>=0.1.4",
+    "taskiq-cancellation[redis]>=0.0.1",
     # Database
     "psycopg2-binary>=2.9",
     "redis>=5.0",

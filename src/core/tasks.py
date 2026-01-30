@@ -31,7 +31,11 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
-from taskiq_pipelines import Pipeline
+from taskiq import TaskiqEvents
+from taskiq_cancellation import CancellationType
+from taskiq_cancellation.backends.redis import RedisCancellationBackend
+from taskiq_pipelines import Pipeline, PipelineMiddleware
+from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 from xhtml2pdf import pisa
 
 # Import AI functions - they will run in async context
@@ -45,20 +49,43 @@ from pipeline.ai import (
 from pipeline.helpers import Caption, Slide, fetch, parse_markdown_bold_to_rich_text
 
 from .cache import CacheContext, get_cached_result, set_cached_result
-from .taskiq_app import broker
+from .middleware import PipelineErrorMiddleware
 
 # Directory configuration
 IN_DIR = os.path.join("data", "input")
 OUT_DIR = os.path.join("data", "output")
 FRAMES_DIR = os.path.join("data", "frames")
 
+# Redis configuration
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+# Create the result backend
+result_backend = RedisAsyncResultBackend(
+    redis_url=REDIS_URL,
+    result_ex_time=60 * 60 * 24,  # Results expire after 24 hours
+)
+
+# Create the broker with middlewares
+broker = (
+    ListQueueBroker(
+        url=REDIS_URL,
+        queue_name="handout_generator",
+    )
+    .with_result_backend(result_backend)
+    .with_middlewares(
+        PipelineErrorMiddleware(),
+        PipelineMiddleware(),
+    )
+)
+
+# Create cancellation backend for task cancellation support
+cancellation_backend = RedisCancellationBackend(REDIS_URL).with_broker(broker)
+
+
 # Ensure directories exist
 os.makedirs(IN_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(FRAMES_DIR, exist_ok=True)
-
-# Redis URL for pub/sub
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 @dataclass
@@ -89,9 +116,7 @@ class TaskContext:
         return os.path.join(IN_DIR, f"video_{self.source_id}.mp4")
 
 
-async def publish_progress(
-    job_id: int, stage: str, progress: float, message: str = ""
-) -> None:
+async def publish_progress(job_id: int, stage: str, progress: float, message: str = "") -> None:
     """Publish progress update to Redis pub/sub."""
     redis = await aioredis.from_url(REDIS_URL)
     try:
@@ -110,22 +135,18 @@ async def publish_progress(
         await redis.close()
 
 
-async def update_job_progress(
-    job_id: int, stage: str, progress: float, message: str
-) -> None:
+async def update_job_progress(job_id: int, stage: str, progress: float, message: str) -> None:
     """Update job progress in the database and publish to Redis."""
     from core.models import Job, JobStatus
 
     try:
         job = await Job.objects.aget(id=job_id)
-        job.current_stage = stage
+        job.current_stage = message
         job.progress = progress
         if job.status == JobStatus.PENDING:
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now(timezone.utc)
-        await job.asave(
-            update_fields=["current_stage", "progress", "status", "started_at"]
-        )
+        await job.asave(update_fields=["current_stage", "progress", "status", "started_at"])
     except Job.DoesNotExist:
         pass
 
@@ -191,10 +212,33 @@ async def mark_job_completed(job_id: int, outputs: dict) -> None:
         pass
 
 
+# Worker lifecycle events
+
+
+@broker.on_event(TaskiqEvents.WORKER_STARTUP)
+async def on_worker_startup(state):
+    """Initialize resources when worker starts."""
+    # Start cancellation backend
+    await cancellation_backend.startup()
+
+    # Store Redis connection for pub/sub in state
+    state.redis = await aioredis.from_url(REDIS_URL)
+
+
+@broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
+async def on_worker_shutdown(state):
+    """Cleanup when worker shuts down."""
+    # Shutdown cancellation backend
+    await cancellation_backend.shutdown()
+
+    if hasattr(state, "redis"):
+        await state.redis.close()
+
+
 # Pipeline stage tasks
 
-
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_context_task(job_id: int, input_type: str, input_data: str) -> dict:
     """Generate processing context from input."""
     stage_name = "generate_context"
@@ -225,6 +269,7 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def download_video_task(data: dict) -> dict:
     """Download video if it doesn't exist."""
     ctx = TaskContext.from_dict(data)
@@ -269,6 +314,7 @@ async def download_video_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def extract_captions_task(data: dict) -> dict:
     """Extract captions from the video."""
     ctx = TaskContext.from_dict(data)
@@ -298,6 +344,7 @@ async def extract_captions_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def match_frames_task(data: dict) -> dict:
     """Match frames to captions based on structural similarity."""
     ctx = TaskContext.from_dict(data)
@@ -345,9 +392,7 @@ async def match_frames_task(data: dict) -> dict:
             cum_captions.append(cap.text)
             continue
 
-        similarity_result = ski.metrics.structural_similarity(
-            last_frame_gs, frame_gs, full=False
-        )
+        similarity_result = ski.metrics.structural_similarity(last_frame_gs, frame_gs, full=False)
         score = (
             similarity_result
             if isinstance(similarity_result, (int, float))
@@ -365,9 +410,7 @@ async def match_frames_task(data: dict) -> dict:
             cum_captions.clear()
 
             progress = (idx + 1) / len(captions)
-            await update_job_progress(
-                job_id, stage_name, progress * 0.9, "Matching slides"
-            )
+            await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
 
         cum_captions.append(cap.text)
 
@@ -381,6 +424,7 @@ async def match_frames_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def transform_slides_ai_task(data: dict) -> dict:
     """Apply AI transformation to slides."""
     ctx = TaskContext.from_dict(data)
@@ -416,9 +460,7 @@ async def transform_slides_ai_task(data: dict) -> dict:
         )
 
         progress = (idx + 1) / total
-        await update_job_progress(
-            job_id, stage_name, progress * 0.9, "Cleaning transcript"
-        )
+        await update_job_progress(job_id, stage_name, progress * 0.9, "Cleaning transcript")
 
     ctx.slides = output
     cache.set(stage_name, output)
@@ -429,6 +471,7 @@ async def transform_slides_ai_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_output_task(data: dict) -> dict:
     """Generate the PDF output."""
     ctx = TaskContext.from_dict(data)
@@ -449,10 +492,8 @@ async def generate_output_task(data: dict) -> dict:
     # Convert slide dicts back to Slide namedtuples for template
     slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
-    template_path = os.path.join(os.path.dirname(__file__), "..", "templates")
-    env = Environment(
-        loader=FileSystemLoader(template_path), autoescape=select_autoescape()
-    )
+    template_path = os.path.join(os.path.dirname(__file__), "..", "..", "templates")
+    env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("template.html")
     html = template.render(pairs=slides)
 
@@ -480,6 +521,7 @@ async def generate_output_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def compress_pdf_task(data: dict) -> dict:
     """Compress the PDF using Ghostscript."""
     ctx = TaskContext.from_dict(data)
@@ -495,9 +537,7 @@ async def compress_pdf_task(data: dict) -> dict:
     source_id = str(hash(pdf_path))
     cached = get_cached_result(source_id, stage_name)
     if cached and os.path.exists(cached):
-        await update_job_progress(
-            job_id, stage_name, 1.0, "Using cached compressed PDF"
-        )
+        await update_job_progress(job_id, stage_name, 1.0, "Using cached compressed PDF")
         return ctx.to_dict()
 
     with TemporaryDirectory() as temp_dir:
@@ -529,6 +569,7 @@ async def compress_pdf_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_spreadsheet_task(data: dict) -> dict:
     """Generate the Excel spreadsheet."""
     ctx = TaskContext.from_dict(data)
@@ -550,9 +591,7 @@ async def generate_spreadsheet_task(data: dict) -> dict:
         pdf_path, xlsx_path = cached
         if os.path.exists(xlsx_path):
             ctx.outputs["xlsx_path"] = xlsx_path
-            await update_job_progress(
-                job_id, stage_name, 1.0, "Using cached spreadsheet"
-            )
+            await update_job_progress(job_id, stage_name, 1.0, "Using cached spreadsheet")
             return ctx.to_dict()
 
     await update_job_progress(job_id, stage_name, 0.2, "Analyzing document")
@@ -615,6 +654,7 @@ async def generate_spreadsheet_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_vignette_task(data: dict) -> dict:
     """Generate the vignette PDF."""
     ctx = TaskContext.from_dict(data)
@@ -648,9 +688,7 @@ async def generate_vignette_task(data: dict) -> dict:
     learning_objectives = [lo.model_dump() for lo in vignette_data.learning_objectives]
 
     template_path = os.path.join(os.path.dirname(__file__), "..", "templates")
-    env = Environment(
-        loader=FileSystemLoader(template_path), autoescape=select_autoescape()
-    )
+    env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("vignette.html")
     html = template.render(learning_objectives=learning_objectives)
 
@@ -674,6 +712,7 @@ async def generate_vignette_task(data: dict) -> dict:
 
 
 @broker.task
+@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def finalize_job_task(data: dict) -> dict:
     """Finalize the job and create database records."""
     ctx = TaskContext.from_dict(data)
@@ -751,9 +790,7 @@ async def _download_m3u8_stream(
 
             for attempt in range(3):
                 try:
-                    await asyncio.to_thread(
-                        urllib.request.urlretrieve, segment_url, segment_path
-                    )
+                    await asyncio.to_thread(urllib.request.urlretrieve, segment_url, segment_path)
                     if os.path.getsize(segment_path) > 0:
                         break
                 except Exception as e:
@@ -762,9 +799,7 @@ async def _download_m3u8_stream(
 
             segment_files.append(segment_path)
             progress = (i + 1) / total_segments * 0.8
-            await update_job_progress(
-                job_id, stage_name, progress, "Downloading segments"
-            )
+            await update_job_progress(job_id, stage_name, progress, "Downloading segments")
 
         await update_job_progress(job_id, stage_name, 0.85, "Combining segments")
 

@@ -1609,11 +1609,11 @@ wheels = [
 
 [[package]]
 name = "redis"
-version = "7.1.0"
+version = "6.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/43/c8/983d5c6579a411d8a99bc5823cc5712768859b5ce2c8afe1a65b37832c81/redis-7.1.0.tar.gz", hash = "sha256:b1cc3cfa5a2cb9c2ab3ba700864fb0ad75617b41f01352ce5779dabf6d5f9c3c", size = 4796669, upload-time = "2025-11-19T15:54:39.961Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0d/d6/e8b92798a5bd67d659d51a18170e91c16ac3b59738d91894651ee255ed49/redis-6.4.0.tar.gz", hash = "sha256:b01bc7282b8444e28ec36b261df5375183bb47a07eb9c603f284e89cbc5ef010", size = 4647399, upload-time = "2025-08-07T08:10:11.441Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/89/f0/8956f8a86b20d7bb9d6ac0187cf4cd54d8065bc9a1a09eb8011d4d326596/redis-7.1.0-py3-none-any.whl", hash = "sha256:23c52b208f92b56103e17c5d06bdc1a6c2c0b3106583985a76a18f83b265de2b", size = 354159, upload-time = "2025-11-19T15:54:38.064Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/02/89e2ed7e85db6c93dfa9e8f691c5087df4e3551ab39081a4d7c6d1f90e05/redis-6.4.0-py3-none-any.whl", hash = "sha256:f0544fa9604264e9464cdf4814e7d4830f74b165d52f2a330a760a88dd248b7f", size = 279847, upload-time = "2025-08-07T08:10:09.84Z" },
 ]
 
 [[package]]
@@ -1783,6 +1783,7 @@ dependencies = [
     { name = "requests" },
     { name = "scikit-image" },
     { name = "taskiq" },
+    { name = "taskiq-cancellation", extra = ["redis"] },
     { name = "taskiq-pipelines" },
     { name = "taskiq-redis" },
     { name = "whitenoise" },
@@ -1828,6 +1829,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31" },
     { name = "scikit-image", specifier = ">=0.22" },
     { name = "taskiq", specifier = ">=0.11" },
+    { name = "taskiq-cancellation", extras = ["redis"], specifier = ">=0.0.1" },
     { name = "taskiq-pipelines", specifier = ">=0.1.4" },
     { name = "taskiq-redis", specifier = ">=1.0" },
     { name = "whitenoise", specifier = ">=6.9" },
@@ -1911,6 +1913,23 @@ reload = [
 ]
 
 [[package]]
+name = "taskiq-cancellation"
+version = "0.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "taskiq" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/63/d8/ae662c1bb5eef1021d620e5a9d968cb01c906d7689ecb1c65380fa5ce9c0/taskiq_cancellation-0.0.1.tar.gz", hash = "sha256:1fe60a4213b8c3189f3519db3ca8379d66f389858229e3250dc4425154d442f8", size = 14948, upload-time = "2025-11-11T21:59:33.509Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/4c/16eb1df685312f2e0e518abe523ec3387f9fd15063d449a9b10ddf88950b/taskiq_cancellation-0.0.1-py3-none-any.whl", hash = "sha256:0f3e8cb37e67e973f406124b93fdc7000d720a12f0187344a37e04dd3f195085", size = 23978, upload-time = "2025-11-11T21:59:32.093Z" },
+]
+
+[package.optional-dependencies]
+redis = [
+    { name = "redis" },
+]
+
+[[package]]
 name = "taskiq-dependencies"
 version = "1.5.7"
 source = { registry = "https://pypi.org/simple" }
@@ -1935,15 +1954,15 @@ wheels = [
 
 [[package]]
 name = "taskiq-redis"
-version = "1.2.1"
+version = "1.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "redis" },
     { name = "taskiq" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/64/35/58ec34c74c888235ecea3dba3b0e74a3902a6b70f0cd56fffa0012f03a61/taskiq_redis-1.2.1.tar.gz", hash = "sha256:8a6b7d3187798e00f27fca6d4a9d73efc559ed88e3c3c571647c9163add7af47", size = 14376, upload-time = "2025-12-19T17:36:03.45Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d2/0b/5006792cbdf6e78abaab45407968d96e2a1ffd0238cd41b13a62b33880cf/taskiq_redis-1.1.2.tar.gz", hash = "sha256:f878a047abc1a0fa0ddda6e4b063d742f030858d5a4409de96261a00a992c9c9", size = 16225, upload-time = "2025-10-07T10:46:13.666Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/99/1e/d4202cdb98bf2df087dd303df35d0faf2528f985d62aa685cce994584c4f/taskiq_redis-1.2.1-py3-none-any.whl", hash = "sha256:caf91241a23cd77c4304e455a775caa08c5005b48b62fc613b4dd5b44a515488", size = 20570, upload-time = "2025-12-19T17:36:02.142Z" },
+    { url = "https://files.pythonhosted.org/packages/73/20/9bf19b05eb7cb275a04871f3c38bf088c108579c4c19ea2a1358d2a81334/taskiq_redis-1.1.2-py3-none-any.whl", hash = "sha256:3b69468ff99da33243314c84acfa137a4a014abad10dd44e62195bc5e4ae9947", size = 20424, upload-time = "2025-10-07T10:46:12.779Z" },
 ]
 
 [[package]]
