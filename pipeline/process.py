@@ -30,6 +30,7 @@ from pipeline.ai import (
     generate_title,
     generate_vignette_questions,
 )
+from pipeline.cache import get_cached_result, set_cached_result
 from pipeline.helpers import Caption, Slide, fetch
 
 from .pipeline import Pipeline, PipelineFailure, Progress
@@ -107,6 +108,14 @@ class ProcessingContext:
         if isinstance(self.source, str) and os.path.exists(self.source):
             return self.source
         return os.path.join(in_dir, f"video_{self.source_id}.mp4")
+
+    def get_cached(self, stage_name: str):
+        """Get cached result for a stage."""
+        return get_cached_result(self.source_id, stage_name)
+
+    def set_cached(self, stage_name: str, result):
+        """Cache result for a stage."""
+        set_cached_result(self.source_id, stage_name, result)
 
 
 # Utility functions for video download
@@ -296,19 +305,32 @@ def generate_context(pipeline: Pipeline, input: ProcessingInput) -> ProcessingCo
 
 def download_video(pipeline: Pipeline, ctx: ProcessingContext) -> ProcessingContext:
     """Download video if it doesn't exist."""
+    stage_name = "download_video"
+
+    # Check cache first
+    cached = ctx.get_cached(stage_name)
+    if cached is not None and os.path.exists(cached.get("video_path", "")):
+        pipeline.report_progress("Using cached video", 1.0)
+        return ctx
+
     if (
         isinstance(ctx.source, str)
         and os.path.exists(ctx.source)
         and ctx.source == ctx.video_path
     ):
+        ctx.set_cached(stage_name, {"video_path": ctx.video_path})
         return ctx
 
     if not os.path.exists(ctx.video_path):
         # Check if the URL points to an m3u8 file
         if isinstance(ctx.source, PanoptoInput):
-            return _download_panopto_video(ctx)
+            result = _download_panopto_video(ctx)
         else:
-            return _download_regular_video(ctx, ctx.source)
+            result = _download_regular_video(ctx, ctx.source)
+        ctx.set_cached(stage_name, {"video_path": ctx.video_path})
+        return result
+
+    ctx.set_cached(stage_name, {"video_path": ctx.video_path})
     return ctx
 
 
@@ -316,13 +338,37 @@ async def extract_captions(
     pipeline: Pipeline, ctx: ProcessingContext
 ) -> ProcessingContext:
     """Extract captions from the video."""
+    stage_name = "extract_captions"
+
+    # Check cache first
+    cached = ctx.get_cached(stage_name)
+    if cached is not None:
+        pipeline.report_progress("Using cached captions", 1.0)
+        ctx.captions = [Caption(**c) for c in cached]
+        return ctx
+
     ctx.pipeline.report_progress("Transcribing")
     ctx.captions = await generate_captions(ctx.video_path)
+
+    # Cache the captions (convert namedtuples to dicts for serialization)
+    ctx.set_cached(stage_name, [c._asdict() for c in ctx.captions])
     return ctx
 
 
 def match_frames(pipeline: Pipeline, ctx: ProcessingContext) -> ProcessingContext:
     """Match frames to captions based on structural similarity."""
+    stage_name = "match_frames"
+
+    # Check cache first
+    cached = ctx.get_cached(stage_name)
+    if cached is not None:
+        # Verify cached frame images still exist
+        slides = [Slide(**s) for s in cached]
+        if all(os.path.exists(s.image) for s in slides):
+            pipeline.report_progress("Using cached slides", 1.0)
+            ctx.slides = slides
+            return ctx
+
     if not ctx.captions:
         ctx.slides = []
         return ctx
@@ -378,6 +424,9 @@ def match_frames(pipeline: Pipeline, ctx: ProcessingContext) -> ProcessingContex
 
     stream.release()
     ctx.slides = pairs
+
+    # Cache the slides (convert namedtuples to dicts for serialization)
+    ctx.set_cached(stage_name, [s._asdict() for s in pairs])
     return ctx
 
 
@@ -385,8 +434,20 @@ async def transform_slides_with_ai(
     pipeline: Pipeline, ctx: ProcessingContext
 ) -> ProcessingContext:
     """Apply AI transformation to slides if enabled."""
+    stage_name = "transform_slides_with_ai"
+
     if not ctx.use_ai or not ctx.slides:
         return ctx
+
+    # Check cache first
+    cached = ctx.get_cached(stage_name)
+    if cached is not None:
+        # Verify cached frame images still exist
+        slides = [Slide(**s) for s in cached]
+        if all(os.path.exists(s.image) for s in slides):
+            pipeline.report_progress("Using cached AI-transformed slides", 1.0)
+            ctx.slides = slides
+            return ctx
 
     async def transform_slide(slide: Slide) -> Slide:
         """Transform a single slide using AI."""
@@ -402,6 +463,9 @@ async def transform_slides_with_ai(
         )
         output.append(await transform_slide(slide))
     ctx.slides = output
+
+    # Cache the transformed slides
+    ctx.set_cached(stage_name, [s._asdict() for s in output])
     return ctx
 
 
@@ -416,6 +480,14 @@ def generate_pdf_output(ctx: ProcessingContext, html: str, path: str) -> None:
 
 async def generate_output(pipeline: Pipeline, ctx: ProcessingContext) -> str:
     """Generate the final PDF output."""
+    stage_name = "generate_output"
+
+    # Check cache first
+    cached = ctx.get_cached(stage_name)
+    if cached is not None and os.path.exists(cached):
+        pipeline.report_progress("Using cached PDF", 1.0)
+        return cached
+
     pipeline.report_progress("Generating PDF", 0)
     template_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "templates"
@@ -437,6 +509,8 @@ async def generate_output(pipeline: Pipeline, ctx: ProcessingContext) -> str:
     )
     pipeline.report_progress("Generating PDF", 1.0)
 
+    # Cache the output path
+    ctx.set_cached(stage_name, path)
     return path
 
 
@@ -450,6 +524,15 @@ def compress_pdf(pipeline: Pipeline, input_path: str, quality="ebook") -> str:
         quality (str): Quality setting for compression ('screen', 'ebook',
                        'printer', 'prepress'). 'ebook' is a good balance.
     """
+    stage_name = "compress_pdf"
+    source_id = str(hash(input_path))
+
+    # Check cache first - if the file exists and matches cached path, skip compression
+    cached = get_cached_result(source_id, stage_name)
+    if cached is not None and os.path.exists(cached):
+        pipeline.report_progress("Using cached compressed PDF", 1.0)
+        return cached
+
     with TemporaryDirectory() as temp_dir:
         output_path = os.path.join(
             temp_dir, f"compressed_{os.path.basename(input_path)}"
@@ -481,10 +564,23 @@ def compress_pdf(pipeline: Pipeline, input_path: str, quality="ebook") -> str:
         shutil.move(output_path, input_path)
         pipeline.report_progress("Compressing PDF", 1.0)
 
+    # Cache the result
+    set_cached_result(source_id, stage_name, input_path)
     return input_path
 
 
 async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, str]:
+    stage_name = "generate_spreadsheet"
+    source_id = str(hash(filename))
+
+    # Check cache first
+    cached = get_cached_result(source_id, stage_name)
+    if cached is not None:
+        pdf_path, xlsx_path = cached
+        if os.path.exists(pdf_path) and os.path.exists(xlsx_path):
+            pipeline.report_progress("Using cached Excel sheet", 1.0)
+            return cached
+
     pipeline.report_progress("Generating Excel Sheet", 0)
 
     study_table = await generate_spreadsheet_helper(filename)
@@ -550,7 +646,10 @@ async def generate_spreadsheet(pipeline: Pipeline, filename: str) -> tuple[str, 
     wb.save(output_filename)
     pipeline.report_progress("Generating Excel Sheet", 1.0)
 
-    return filename, output_filename
+    # Cache the result
+    result = (filename, output_filename)
+    set_cached_result(source_id, stage_name, result)
+    return result
 
 
 async def generate_vignette_pdf(
@@ -558,6 +657,17 @@ async def generate_vignette_pdf(
 ) -> tuple[str, str, str]:
     """Generate a PDF with vignette questions for each learning objective."""
     pdf_filename, xlsx_filename = inputs
+    stage_name = "generate_vignette_pdf"
+    source_id = str(hash(pdf_filename))
+
+    # Check cache first
+    cached = get_cached_result(source_id, stage_name)
+    if cached is not None:
+        pdf_path, xlsx_path, vignette_path = cached
+        if all(os.path.exists(p) for p in [pdf_path, xlsx_path, vignette_path]):
+            pipeline.report_progress("Using cached vignette PDF", 1.0)
+            return cached
+
     pipeline.report_progress("Generating Vignette Questions", 0)
 
     # Generate vignette questions from the PDF
@@ -598,7 +708,10 @@ async def generate_vignette_pdf(
 
     pipeline.report_progress("Generating Vignette PDF", 1.0)
 
-    return pdf_filename, xlsx_filename, vignette_pdf_path
+    # Cache the result
+    result = (pdf_filename, xlsx_filename, vignette_pdf_path)
+    set_cached_result(source_id, stage_name, result)
+    return result
 
 
 def create_pipeline(
