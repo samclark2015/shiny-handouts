@@ -163,6 +163,18 @@ def update_job_progress(job_id: int, stage: str, progress: float, message: str) 
             db.session.commit()
 
 
+def update_job_label(job_id: int, label: str) -> None:
+    """Update job label in the database."""
+    from models import Job, db
+
+    app = _get_flask_app()
+    with app.app_context():
+        job = db.session.get(Job, job_id)
+        if job:
+            job.label = label
+            db.session.commit()
+
+
 def mark_job_completed(job_id: int, outputs: dict) -> None:
     """Mark a job as completed in the database."""
     from models import Artifact, ArtifactType, Job, JobStatus, Lecture, db
@@ -515,6 +527,7 @@ def generate_output_task(self, data: dict) -> dict:
 
     update_job_progress(job_id, stage_name, 0.3, "Generating title")
     title = run_async(generate_title(html))
+    update_job_label(job_id, title)
 
     path = os.path.join(OUT_DIR, f"{title}.pdf")
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -908,4 +921,5 @@ def start_pipeline(job_id: int, input_type: str, input_data: str) -> str:
     """Start the pipeline and return the Celery task ID."""
     pipeline = create_pipeline_chain(job_id, input_type, input_data)
     result = pipeline.apply_async()
+    return result.id
     return result.id
