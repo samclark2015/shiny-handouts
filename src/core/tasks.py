@@ -102,6 +102,15 @@ class TaskContext:
     slides: Optional[list[dict]] = None
     outputs: Optional[dict] = None
 
+    # Per-job settings
+    enable_excel: bool = True
+    enable_vignette: bool = True
+
+    # User settings (custom prompts)
+    vignette_prompt: Optional[str] = None
+    spreadsheet_prompt: Optional[str] = None
+    spreadsheet_columns: Optional[list[dict]] = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -218,6 +227,11 @@ async def mark_job_completed(job_id: int, outputs: dict) -> None:
 @broker.on_event(TaskiqEvents.WORKER_STARTUP)
 async def on_worker_startup(state):
     """Initialize resources when worker starts."""
+    # Initialize Django before using any models
+    import django
+
+    django.setup()
+
     # Start cancellation backend
     await cancellation_backend.startup()
 
@@ -241,6 +255,9 @@ async def on_worker_shutdown(state):
 @cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_context_task(job_id: int, input_type: str, input_data: str) -> dict:
     """Generate processing context from input."""
+    from accounts.models import UserSettings
+    from core.models import Job
+
     stage_name = "generate_context"
 
     await update_job_progress(job_id, stage_name, 0, "Initializing")
@@ -255,12 +272,35 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
     else:  # upload
         source_id = str(hash(input_dict.get("path", "")))
 
+    # Load job settings
+    job = await Job.objects.select_related("user").aget(id=job_id)
+    enable_excel = job.enable_excel
+    enable_vignette = job.enable_vignette
+
+    # Load user settings
+    vignette_prompt = None
+    spreadsheet_prompt = None
+    spreadsheet_columns = None
+
+    try:
+        user_settings = await UserSettings.objects.aget(user_id=job.user_id)
+        vignette_prompt = user_settings.get_vignette_prompt()
+        spreadsheet_prompt = user_settings.get_spreadsheet_prompt()
+        spreadsheet_columns = user_settings.get_spreadsheet_columns()
+    except UserSettings.DoesNotExist:
+        pass
+
     ctx = TaskContext(
         job_id=job_id,
         source_id=source_id,
         input_type=input_type,
         input_data=input_dict,
         use_ai=True,
+        enable_excel=enable_excel,
+        enable_vignette=enable_vignette,
+        vignette_prompt=vignette_prompt,
+        spreadsheet_prompt=spreadsheet_prompt,
+        spreadsheet_columns=spreadsheet_columns,
     )
 
     await update_job_progress(job_id, stage_name, 1.0, "Context created")
@@ -576,6 +616,11 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     job_id = ctx.job_id
     stage_name = "generate_spreadsheet"
 
+    # Skip if Excel generation is disabled
+    if not ctx.enable_excel:
+        await update_job_progress(job_id, stage_name, 1.0, "Excel generation skipped")
+        return ctx.to_dict()
+
     await update_job_progress(job_id, stage_name, 0, "Generating spreadsheet")
 
     if ctx.outputs is None:
@@ -595,7 +640,11 @@ async def generate_spreadsheet_task(data: dict) -> dict:
             return ctx.to_dict()
 
     await update_job_progress(job_id, stage_name, 0.2, "Analyzing document")
-    study_table = await generate_spreadsheet_helper(pdf_path)
+    study_table = await generate_spreadsheet_helper(
+        pdf_path,
+        custom_prompt=ctx.spreadsheet_prompt,
+        custom_columns=ctx.spreadsheet_columns,
+    )
 
     if not study_table.rows:
         raise ValueError("No rows found in data")
@@ -661,6 +710,11 @@ async def generate_vignette_task(data: dict) -> dict:
     job_id = ctx.job_id
     stage_name = "generate_vignette_pdf"
 
+    # Skip if vignette generation is disabled
+    if not ctx.enable_vignette:
+        await update_job_progress(job_id, stage_name, 1.0, "Vignette generation skipped")
+        return ctx.to_dict()
+
     await update_job_progress(job_id, stage_name, 0, "Generating vignette questions")
 
     if ctx.outputs is None:
@@ -680,7 +734,10 @@ async def generate_vignette_task(data: dict) -> dict:
             return ctx.to_dict()
 
     await update_job_progress(job_id, stage_name, 0.2, "Generating questions")
-    vignette_data = await generate_vignette_questions(pdf_path)
+    vignette_data = await generate_vignette_questions(
+        pdf_path,
+        custom_prompt=ctx.vignette_prompt,
+    )
 
     if not vignette_data.learning_objectives:
         raise ValueError("No learning objectives found")

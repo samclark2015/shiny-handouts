@@ -15,14 +15,33 @@ class JobAdmin(admin.ModelAdmin):
         "user",
         "status",
         "progress",
+        "enable_excel",
+        "enable_vignette",
         "created_at",
         "completed_at",
     )
-    list_filter = ("status", "input_type", "created_at")
+    list_filter = ("status", "input_type", "enable_excel", "enable_vignette", "created_at")
     search_fields = ("label", "user__email", "taskiq_task_id")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "started_at", "completed_at", "taskiq_task_id")
     raw_id_fields = ("user",)
+
+    fieldsets = (
+        (
+            None,
+            {"fields": ("user", "label", "status", "progress", "current_stage", "error_message")},
+        ),
+        ("Input", {"fields": ("input_type", "input_data")}),
+        (
+            "Output Options",
+            {
+                "fields": ("enable_excel", "enable_vignette"),
+                "description": "Control which outputs are generated for this job.",
+            },
+        ),
+        ("Task Info", {"fields": ("taskiq_task_id",)}),
+        ("Timestamps", {"fields": ("created_at", "started_at", "completed_at")}),
+    )
 
 
 @admin.register(Lecture)

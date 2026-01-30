@@ -73,9 +73,40 @@ async def generate_title(html: str) -> str:
     return await response.get_content()
 
 
-async def generate_spreadsheet_helper(filename: str) -> StudyTable:
-    """Generate a study table from a PDF file."""
-    prompt = read_prompt("generate_spreadsheet")
+def _build_column_prompt_section(columns: list[dict] | None) -> str:
+    """Build the column configuration section for the spreadsheet prompt."""
+    if not columns:
+        return ""
+
+    column_lines = ["Column headers for each disease:", ""]
+    for col in columns:
+        name = col.get("name", "")
+        description = col.get("description", "")
+        if name:
+            column_lines.append(f"- {name}: {description}" if description else f"- {name}")
+
+    return "\n".join(column_lines)
+
+
+async def generate_spreadsheet_helper(
+    filename: str,
+    custom_prompt: str | None = None,
+    custom_columns: list[dict] | None = None,
+) -> StudyTable:
+    """Generate a study table from a PDF file.
+
+    Args:
+        filename: Path to the PDF file.
+        custom_prompt: Optional custom prompt to use instead of default.
+        custom_columns: Optional custom column configuration for the LLM.
+    """
+    if custom_prompt:
+        prompt = custom_prompt
+        # If custom columns are provided, append column instructions
+        if custom_columns:
+            prompt += "\n\n" + _build_column_prompt_section(custom_columns)
+    else:
+        prompt = read_prompt("generate_spreadsheet")
 
     chat = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 
@@ -87,9 +118,20 @@ async def generate_spreadsheet_helper(filename: str) -> StudyTable:
     return result
 
 
-async def generate_vignette_questions(filename: str) -> VignetteQuestions:
-    """Generate 2-3 step-style vignette multiple choice questions for each learning objective."""
-    prompt = read_prompt("generate_vignette_questions")
+async def generate_vignette_questions(
+    filename: str,
+    custom_prompt: str | None = None,
+) -> VignetteQuestions:
+    """Generate 2-3 step-style vignette multiple choice questions for each learning objective.
+
+    Args:
+        filename: Path to the PDF file.
+        custom_prompt: Optional custom prompt to use instead of default.
+    """
+    if custom_prompt:
+        prompt = custom_prompt
+    else:
+        prompt = read_prompt("generate_vignette_questions")
 
     chat = ChatOpenAI(api_key=key, model=SMART_MODEL, system_prompt=prompt)
 

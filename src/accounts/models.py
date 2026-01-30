@@ -12,6 +12,36 @@ from django.contrib.auth.models import (
 from django.db import models
 from django.utils import timezone
 
+# Default column configuration for Excel spreadsheet
+DEFAULT_SPREADSHEET_COLUMNS = [
+    {"name": "Condition", "description": "The name of the disease or condition"},
+    {"name": "Risk Factors", "description": "Risk factors for developing the condition"},
+    {"name": "Etiology", "description": "The cause or origin of the condition"},
+    {
+        "name": "Pathology",
+        "description": "The structural and functional changes caused by the disease",
+    },
+    {"name": "Pathophysiology", "description": "The mechanisms and progression of the disease"},
+    {"name": "Clinical Presentation", "description": "Signs and symptoms patients present with"},
+    {"name": "Diagnosis / Key Findings", "description": "Diagnostic criteria and key findings"},
+    {"name": "Histology Key Findings", "description": "Microscopic findings on tissue examination"},
+    {"name": "Prognosis", "description": "Expected outcome and disease progression"},
+    {"name": "Treatment", "description": "Treatment options and management"},
+    {
+        "name": "Classic Step 1–Style Question Stem",
+        "description": "A clinically plausible USMLE-style question stem",
+    },
+    {
+        "name": "Photos from Lecture",
+        "description": "Description of relevant images from the lecture",
+    },
+    {
+        "name": "Additional Notes/Important Things",
+        "description": "Additional notes and important points",
+    },
+    {"name": "Mnemonic", "description": "Memory aids for the condition"},
+]
+
 
 class UserManager(BaseUserManager):
     """Manager for custom User model."""
@@ -82,6 +112,63 @@ class User(AbstractBaseUser, PermissionsMixin):
         """Return the full name for the user."""
         return self.name
 
-    def get_full_name(self):
-        """Return the full name for the user."""
-        return self.name
+
+class UserSettings(models.Model):
+    """User-specific settings for handout generation."""
+
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name="settings",
+        primary_key=True,
+    )
+
+    # Custom prompts
+    vignette_prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom prompt for generating quiz/vignette questions. Leave blank to use default.",
+    )
+    spreadsheet_prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom prompt for generating Excel study table. Leave blank to use default.",
+    )
+
+    # Excel column configuration (stored as JSON)
+    spreadsheet_columns = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Custom columns for Excel file. Each column should have 'name' and 'description' keys.",
+    )
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "user_settings"
+        verbose_name = "user settings"
+        verbose_name_plural = "user settings"
+
+    def __str__(self):
+        return f"Settings for {self.user.email}"
+
+    def save(self, *args, **kwargs):
+        # Set default columns if empty
+        if not self.spreadsheet_columns:
+            self.spreadsheet_columns = DEFAULT_SPREADSHEET_COLUMNS
+        super().save(*args, **kwargs)
+
+    def get_vignette_prompt(self) -> str | None:
+        """Get the vignette prompt, or None if using default."""
+        return self.vignette_prompt if self.vignette_prompt else None
+
+    def get_spreadsheet_prompt(self) -> str | None:
+        """Get the spreadsheet prompt, or None if using default."""
+        return self.spreadsheet_prompt if self.spreadsheet_prompt else None
+
+    def get_spreadsheet_columns(self) -> list[dict]:
+        """Get the spreadsheet columns configuration."""
+        if self.spreadsheet_columns:
+            return self.spreadsheet_columns
+        return DEFAULT_SPREADSHEET_COLUMNS

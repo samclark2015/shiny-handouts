@@ -28,6 +28,10 @@ def upload_file(request):
     if file.name == "":
         return render(request, "partials/error.html", {"message": "No file selected"}, status=400)
 
+    # Get per-job settings from form
+    enable_excel = request.POST.get("enable_excel", "on") == "on"
+    enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+
     # Save the file
     filename = get_valid_filename(file.name)
     file_path = os.path.join(settings.INPUT_DIR, filename)
@@ -45,6 +49,8 @@ def upload_file(request):
         status=JobStatus.PENDING,
         input_type="upload",
         input_data=json.dumps({"path": file_path, "filename": filename}),
+        enable_excel=enable_excel,
+        enable_vignette=enable_vignette,
     )
 
     # Start the pipeline asynchronously
@@ -66,6 +72,10 @@ def process_url(request):
     if not video_url:
         return render(request, "partials/error.html", {"message": "No URL provided"}, status=400)
 
+    # Get per-job settings from form
+    enable_excel = request.POST.get("enable_excel", "on") == "on"
+    enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+
     # Extract filename from URL
     filename = video_url.split("/")[-1].split("?")[0] or "video"
 
@@ -76,6 +86,8 @@ def process_url(request):
         status=JobStatus.PENDING,
         input_type="url",
         input_data=json.dumps({"url": video_url}),
+        enable_excel=enable_excel,
+        enable_vignette=enable_vignette,
     )
 
     # Start the pipeline
@@ -100,6 +112,10 @@ def process_panopto(request):
             request, "partials/error.html", {"message": "URL and cookie required"}, status=400
         )
 
+    # Get per-job settings from form
+    enable_excel = request.POST.get("enable_excel", "on") == "on"
+    enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+
     # Parse Panopto URL
     parts = urlparse(panopto_url)
     qs = parse_qs(parts.query)
@@ -117,11 +133,15 @@ def process_panopto(request):
         label=f"Panopto Video ({delivery_id[:8]}...)",
         status=JobStatus.PENDING,
         input_type="panopto",
-        input_data=json.dumps({
-            "base": base,
-            "cookie": cookie,
-            "delivery_id": delivery_id,
-        }),
+        input_data=json.dumps(
+            {
+                "base": base,
+                "cookie": cookie,
+                "delivery_id": delivery_id,
+            }
+        ),
+        enable_excel=enable_excel,
+        enable_vignette=enable_vignette,
     )
 
     # Start the pipeline

@@ -55,6 +55,16 @@ class Job(models.Model):
     input_type = models.CharField(max_length=50)  # 'url', 'upload', 'panopto'
     input_data = models.TextField()  # JSON serialized input
 
+    # Per-job output settings
+    enable_excel = models.BooleanField(
+        default=True,
+        help_text="Generate Excel study table for this job",
+    )
+    enable_vignette = models.BooleanField(
+        default=True,
+        help_text="Generate vignette quiz questions for this job",
+    )
+
     # Timing
     created_at = models.DateTimeField(default=timezone.now)
     started_at = models.DateTimeField(blank=True, null=True)
