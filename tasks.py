@@ -26,7 +26,9 @@ import cv2
 import m3u8
 import pandas as pd
 import skimage as ski
+from billiard.exceptions import WorkerLostError
 from celery import Task, chain
+from celery.signals import task_failure
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
@@ -35,7 +37,6 @@ from xhtml2pdf import pisa
 
 from cache import CacheContext, get_cached_result, set_cached_result
 from celery_app import celery_app
-
 # Import AI functions - they will run in sync context
 from pipeline.ai import (
     clean_transcript,
@@ -45,6 +46,22 @@ from pipeline.ai import (
     generate_vignette_questions,
 )
 from pipeline.helpers import Caption, Slide, fetch, parse_markdown_bold_to_rich_text
+
+
+@task_failure.connect
+def handle_task_failure(task_id, exception, args, kwargs, traceback, einfo, **kw):
+    """Global handler for task failures including WorkerLostError."""
+    if isinstance(exception, WorkerLostError):
+        # Extract job_id from args
+        job_id = None
+        if args and isinstance(args[0], dict) and "job_id" in args[0]:
+            job_id = args[0]["job_id"]
+        elif args and len(args) > 0 and isinstance(args[0], int):
+            job_id = args[0]
+
+        if job_id:
+            error_message = "Worker crashed (likely out of memory). Please try again with a shorter video."
+            mark_job_failed(job_id, error_message)
 
 
 class PipelineTask(Task):
