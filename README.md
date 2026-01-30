@@ -1,4 +1,4 @@
-# Shiny Handouts
+# Handout Generator
 
 A web application for generating lecture handouts from video recordings. Automatically extracts slides, transcribes audio, and generates:
 - 📄 **PDF Handouts** - 16-up slide layouts with transcribed captions
@@ -88,7 +88,7 @@ The application will be available at `http://localhost:5000`.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SECRET_KEY` | Flask secret key for sessions | `dev-secret-key` |
-| `DATABASE_URL` | Database connection URL | `sqlite:///data/shiny_handouts.db` |
+| `DATABASE_URL` | Database connection URL | `sqlite:///data/handout_generator.db` |
 | `REDIS_URL` | Redis URL for Celery broker | `redis://localhost:6379/0` |
 | `REDIS_CACHE_URL` | Redis URL for caching | `redis://localhost:6379/1` |
 | `OAUTH_URL` | Authentik OpenID Connect discovery URL | - |
@@ -98,7 +98,7 @@ The application will be available at `http://localhost:5000`.
 
 ### Database Support
 
-- **SQLite**: Default for development (`sqlite:///data/shiny_handouts.db`)
+- **SQLite**: Default for development (`sqlite:///data/handout_generator.db`)
 - **PostgreSQL**: Recommended for production (`postgresql://user:pass@host:5432/db`)
 - **MySQL/MariaDB**: Supported (`mysql+pymysql://user:pass@host:3306/db`)
 

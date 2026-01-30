@@ -1,9 +1,10 @@
 pre-commit:
   commands:
     Freeze UV Dependencies:
-      run: uv pip freeze > requirements.txt
+      run: uv export --format requirements.txt --no-dev > requirements.txt && uv export --format requirements.txt --dev-only > requirements-dev.txt
       stage_fixed: true
       glob:
+        - requirements-dev.txt
         - requirements.txt
         - uv.lock
 

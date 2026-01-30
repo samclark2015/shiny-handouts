@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ lecture.title }} - Admin - Handout Generator{% endblock %}
+
+{% block body %}
+<!-- Admin Header -->
+<header class="bg-gray-800 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <div class="flex items-center space-x-4">
+            <h1 class="text-2xl font-bold text-white">Admin Dashboard</h1>
+            <span class="bg-red-600 text-white text-xs px-2 py-1 rounded">Admin</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <a href="{% url 'main:index' %}" 
+               class="text-gray-300 hover:text-white text-sm font-medium transition-colors">
+                ← Back to App
+            </a>
+            <span class="text-gray-400">{{ request.user.name }}</span>
+            <a href="{% url 'account_logout' %}" 
+               class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Logout
+            </a>
+        </div>
+    </div>
+</header>
+
+<div class="flex min-h-screen">
+    {% include "admin/partials/sidebar.html" with active="lectures" %}
+
+    <!-- Main Content -->
+    <main class="flex-1 bg-gray-100 p-8">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="mb-4 p-4 rounded-md {% if message.tags == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <!-- Breadcrumb -->
+        <nav class="mb-4">
+            <a href="{% url 'admin:lectures' %}" class="text-blue-600 hover:text-blue-800">Lectures</a>
+            <span class="text-gray-500 mx-2">/</span>
+            <span class="text-gray-700">{{ lecture.title|truncatechars:30 }}</span>
+        </nav>
+
+        <div class="bg-white rounded-lg shadow mb-8">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-900">Lecture Details</h2>
+                <div class="space-x-2">
+                    <form method="post" action="{% url 'admin:delete_lecture' lecture.id %}" class="inline"
+                          onsubmit="return confirm('Are you sure you want to delete this lecture and all its artifacts?');">
+                        {% csrf_token %}
+                        <button type="submit" 
+                                class="px-4 py-2 text-sm font-medium rounded-md bg-red-600 hover:bg-red-700 text-white transition-colors">
+                            Delete Lecture
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="px-6 py-4 grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-sm text-gray-500">ID</p>
+                    <p class="font-medium">{{ lecture.id }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">User</p>
+                    <p class="font-medium">
+                        <a href="{% url 'admin:user_detail' lecture.user.id %}" class="text-blue-600 hover:text-blue-800">
+                            {{ lecture.user.email }}
+                        </a>
+                    </p>
+                </div>
+                <div class="col-span-2">
+                    <p class="text-sm text-gray-500">Title</p>
+                    <form method="post" action="{% url 'admin:rename_lecture' lecture.id %}" class="flex items-center space-x-2">
+                        {% csrf_token %}
+                        <input type="text" name="title" value="{{ lecture.title }}" 
+                               class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button type="submit" 
+                                class="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+                            Rename
+                        </button>
+                    </form>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Date</p>
+                    <p class="font-medium">{{ lecture.date|date:"m/d/Y" }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">Created</p>
+                    <p class="font-medium">{{ lecture.created_at|date:"m/d/Y g:i A" }}</p>
+                </div>
+                
+                {% if lecture.job %}
+                <div>
+                    <p class="text-sm text-gray-500">Source Job</p>
+                    <p class="font-medium">
+                        <a href="{% url 'admin:job_detail' lecture.job.id %}" class="text-blue-600 hover:text-blue-800">
+                            Job #{{ lecture.job.id }}
+                        </a>
+                    </p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Artifacts -->
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">Artifacts ({{ lecture.artifacts.count }})</h2>
+            </div>
+            
+            <div class="divide-y divide-gray-200">
+                {% for artifact in lecture.artifacts.all %}
+                <div class="px-6 py-4 flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        {% if artifact.artifact_type == 'pdf_handout' %}
+                            <span class="text-red-600 text-2xl">📄</span>
+                        {% elif artifact.artifact_type == 'excel_study_table' %}
+                            <span class="text-green-600 text-2xl">📊</span>
+                        {% elif artifact.artifact_type == 'pdf_vignette' %}
+                            <span class="text-purple-600 text-2xl">📝</span>
+                        {% else %}
+                            <span class="text-2xl">📎</span>
+                        {% endif %}
+                        <div>
+                            <p class="font-medium text-gray-900">{{ artifact.file_name }}</p>
+                            <p class="text-sm text-gray-500">{{ artifact.get_artifact_type_display }} • 
+                                {% if artifact.file_size %}
+                                    {% widthratio artifact.file_size 1048576 1 as size_mb %}
+                                    {% widthratio artifact.file_size 1024 1 as size_kb %}
+                                    {% if artifact.file_size > 1048576 %}
+                                        {{ size_mb }} MB
+                                    {% elif artifact.file_size > 1024 %}
+                                        {{ size_kb }} KB
+                                    {% else %}
+                                        {{ artifact.file_size }} B
+                                    {% endif %}
+                                {% else %}
+                                    Unknown size
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <a href="{% url 'main:serve_file' artifact.file_name %}" 
+                           target="_blank"
+                           class="text-blue-600 hover:text-blue-800 text-sm">Download</a>
+                        <form method="post" action="{% url 'admin:rename_artifact' artifact.id %}" class="flex items-center space-x-1">
+                            {% csrf_token %}
+                            <input type="text" name="name" value="{{ artifact.file_name }}" 
+                                   class="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500">
+                            <button type="submit" class="text-sm text-blue-600 hover:text-blue-800">Rename</button>
+                        </form>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="px-6 py-4 text-gray-500">No artifacts</p>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</div>
+{% endblock %}

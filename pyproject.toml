@@ -1,44 +1,77 @@
 [project]
 name = "shiny-handouts"
-version = "0.1.0"
-description = "Lecture handout generator with Flask, Celery, and AI"
+version = "0.2.0"
+description = "Lecture handout generator with Django, Taskiq, and AI"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "audioop-lts>=0.2.2",
-    "authlib>=1.3.0",
-    "celery>=5.3.0",
-    "chatlas>=0.15.0",
-    "click>=8.1.0",
-    "flask>=3.0.0",
-    "flask-login>=0.6.3",
-    "flask-migrate>=4.0.5",
-    "flask-sqlalchemy>=3.1.0",
-    "gunicorn>=21.0.0",
-    "httpx>=0.25.0",
-    "jinja2>=3.1.0",
-    "m3u8>=4.0.0",
-    "openai>=1.0.0",
-    "opencv-python>=4.9.0",
-    "openpyxl>=3.1.0",
-    "pandas>=2.1.0",
-    "psycopg2-binary>=2.9.9",
-    "pydantic>=2.11.3",
-    "pydub>=0.25.1",
-    "pymysql>=1.1.0",
-    "python-dotenv>=1.0.0",
-    "redis>=5.0.0",
-    "requests>=2.31.0",
-    "scikit-image>=0.22.0",
-    "sqlalchemy>=2.0.0",
+    # Django and extensions
+    "django>=5.2",
+    "django-allauth>=65.8",
+    "whitenoise>=6.9",
+    "gunicorn>=24.0",
+    # Taskiq for async task processing
+    "taskiq>=0.11",
+    "taskiq-redis>=1.0",
+    "taskiq-pipelines>=0.1.4",
+    # Database
+    "psycopg2-binary>=2.9",
+    "redis>=5.0",
+    "dj-database-url>=2.3",
+    # AI and processing
+    "chatlas>=0.15",
+    "openai>=1.0",
+    "httpx>=0.28",
+    # Video/audio processing
+    "opencv-python>=4.9",
+    "pydub>=0.25",
+    "m3u8>=4.0",
+    "scikit-image>=0.22",
+    # Document generation
     "xhtml2pdf>=0.2.11",
+    "openpyxl>=3.1",
+    "pandas>=2.1",
+    "jinja2>=3.1",
+    # Utilities
+    "pydantic>=2.11",
+    "python-dotenv>=1.0",
+    "requests>=2.31",
+    "click>=8.1",
+    "audioop-lts>=0.2",
+    "pyjwt>=2.10.1",
+    "django-extensions>=4.1",
 ]
 
 [dependency-groups]
 dev = [
-    "lefthook>=1.11.12",
-    "pytest>=7.4.0",
-    "pytest-cov>=4.1.0",
-    "types-authlib>=1.6.0.20250809",
-    "types-oauthlib>=3.3.0.20250809",
+    "lefthook>=1.11",
+    "pytest>=8.0",
+    "pytest-cov>=6.0",
+    "pytest-django>=4.10",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.11",
+    "mypy>=1.15",
+    "django-stubs>=5.2",
+    "taskiq[reload]",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+strict = true
+
+[tool.django-stubs]
+django_settings_module = "handout_generator.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "handout_generator.settings"
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"

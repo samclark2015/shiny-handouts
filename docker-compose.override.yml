@@ -3,16 +3,27 @@
 
 services:
   web:
+    build:
+      context: .
+      args:
+        DEV_MODE: "true"
     volumes:
       - ./data:/app/data
-      - .:/app  # Mount entire source directory
-    command: flask run --host=0.0.0.0 --debug --reload
+      - ./src:/app/src
+    command: >
+      sh -c "python /app/src/manage.py migrate &&
+             python /app/src/manage.py runserver 0.0.0.0:8000"
     environment:
-      - FLASK_ENV=development
-      - FLASK_DEBUG=1
+      - DEBUG=1
 
-  celery-worker:
+  taskiq-worker:
+    build:
+      context: .
+      args:
+        DEV_MODE: "true"
     volumes:
       - ./data:/app/data
-      - .:/app  # Mount entire source directory
-    command: watchmedo auto-restart --directory=./ --pattern=*.py --recursive -- celery -A celery_app worker --loglevel=info --concurrency=2
+      - ./src:/app/src
+    command: >
+      python -m taskiq worker core.taskiq_app:broker
+      --workers 2

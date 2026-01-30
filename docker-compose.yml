@@ -1,39 +1,54 @@
 services:
-  # Flask web application
+  # Django web application
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "5001:5000"
+      - "8000:8000"
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/handouts
+      - REDIS_URL=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=handout_generator.settings
     volumes:
       - ./data:/app/data
+      - ./src:/app/src
     depends_on:
-      - db
-      - redis
-    command: gunicorn -w 4 -b 0.0.0.0:5000 app:app
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "python /app/src/manage.py migrate &&
+             python /app/src/manage.py collectstatic --noinput &&
+             gunicorn --chdir /app/src -w 4 -b 0.0.0.0:8000 handout_generator.wsgi:application"
 
-  # Celery worker for background tasks
-  celery-worker:
-    build: .
+  # Taskiq worker for background tasks
+  taskiq-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/handouts
+      - REDIS_URL=redis://redis:6379/0
+      - DJANGO_SETTINGS_MODULE=handout_generator.settings
     volumes:
       - ./data:/app/data
+      - ./src:/app/src
     depends_on:
-      - db
-      - redis
-    command: celery -A celery_app worker --loglevel=info --concurrency=4
-
-  # Celery beat for scheduled tasks (optional)
-  celery-beat:
-    build: .
-    env_file:
-      - .env
-    depends_on:
-      - db
-      - redis
-    command: celery -A celery_app beat --loglevel=info
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      taskiq worker core.taskiq_app:broker
+      --fs-discover
+      --tasks-pattern "tasks.py"
+      --workers 4
 
   # PostgreSQL database
   db:
@@ -50,7 +65,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # Redis for Celery broker and caching
+  # Redis for Taskiq broker, results, and pub/sub
   redis:
     image: redis:7-alpine
     volumes:
