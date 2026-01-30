@@ -6,6 +6,11 @@
      hx-get="{{ url_for('api.get_job', job_id=job.id) }}"
      hx-trigger="every 2s"
      hx-swap="outerHTML"
+     {% elif job.status.value in ['completed', 'failed', 'cancelled'] %}
+     hx-get="{{ url_for('api.get_jobs') }}"
+     hx-trigger="load delay:100ms"
+     hx-target="#job-list"
+     hx-swap="innerHTML"
      {% endif %}>
     
     <div class="flex items-center justify-between mb-2">

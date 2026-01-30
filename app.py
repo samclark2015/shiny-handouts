@@ -50,10 +50,12 @@ def create_app(config_name: str | None = None) -> Flask:
 
     # Register blueprints
     from routes import api_bp, auth_bp, main_bp
+    from admin import admin_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(auth_bp, url_prefix="/auth")
+    app.register_blueprint(admin_bp, url_prefix="/admin")
 
     # Template context processors
     @app.context_processor

@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+
+{% block title %}Users - Admin - Shiny Handouts{% endblock %}
+
+{% block body %}
+<!-- Admin Header -->
+<header class="bg-gray-800 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <div class="flex items-center space-x-4">
+            <h1 class="text-2xl font-bold text-white">Admin Dashboard</h1>
+            <span class="bg-red-600 text-white text-xs px-2 py-1 rounded">Admin</span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <a href="{{ url_for('main.index') }}" 
+               class="text-gray-300 hover:text-white text-sm font-medium transition-colors">
+                ← Back to App
+            </a>
+            <span class="text-gray-400">{{ current_user.name }}</span>
+            <a href="{{ url_for('auth.logout') }}" 
+               class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Logout
+            </a>
+        </div>
+    </div>
+</header>
+
+<div class="flex min-h-screen">
+    <!-- Sidebar -->
+    <nav class="w-64 bg-gray-800 text-white">
+        <div class="p-4 space-y-2">
+            <a href="{{ url_for('admin.dashboard') }}" 
+               class="block px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                </svg>
+                Dashboard
+            </a>
+            <a href="{{ url_for('admin.users') }}" 
+               class="block px-4 py-2 rounded-md bg-gray-700 transition-colors">
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path>
+                </svg>
+                Users
+            </a>
+            <a href="{{ url_for('admin.jobs') }}" 
+               class="block px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
+                </svg>
+                Jobs
+            </a>
+            <a href="{{ url_for('admin.lectures') }}" 
+               class="block px-4 py-2 rounded-md hover:bg-gray-700 transition-colors">
+                <svg class="inline-block w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                </svg>
+                Lectures
+            </a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 bg-gray-100 p-8">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="mb-4 p-4 rounded-md {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-green-100 text-green-700{% endif %}">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold text-gray-900">Users</h2>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Last Login</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {% for user in users %}
+                            <tr class="hover:bg-gray-50">
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ user.id }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ user.name }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ user.email }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    {% if user.is_admin %}
+                                        <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Admin</span>
+                                    {% else %}
+                                        <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">User</span>
+                                    {% endif %}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {{ user.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {% if user.last_login %}
+                                        {{ user.last_login.strftime('%Y-%m-%d %H:%M') }}
+                                    {% else %}
+                                        Never
+                                    {% endif %}
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                    <a href="{{ url_for('admin.user_detail', user_id=user.id) }}" 
+                                       class="text-blue-600 hover:text-blue-800">View</a>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="7" class="px-6 py-4 text-center text-gray-500">No users found</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if pagination.pages > 1 %}
+                <div class="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
+                    <div class="text-sm text-gray-500">
+                        Showing {{ pagination.items|length }} of {{ pagination.total }} users
+                    </div>
+                    <div class="flex space-x-2">
+                        {% if pagination.has_prev %}
+                            <a href="{{ url_for('admin.users', page=pagination.prev_num) }}" 
+                               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Previous</a>
+                        {% endif %}
+                        {% if pagination.has_next %}
+                            <a href="{{ url_for('admin.users', page=pagination.next_num) }}" 
+                               class="px-3 py-1 border rounded text-sm hover:bg-gray-50">Next</a>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </main>
+</div>
+{% endblock %}

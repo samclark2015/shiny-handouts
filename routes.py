@@ -46,9 +46,12 @@ auth_bp = Blueprint("auth", __name__)
 @login_required
 def index():
     """Main page with file upload and task list."""
-    # Get user's jobs
+    from models import JobStatus
+
+    # Get user's active jobs only
     jobs = (
         Job.query.filter_by(user_id=current_user.id)
+        .filter(Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]))
         .order_by(Job.created_at.desc())
         .limit(50)
         .all()
@@ -212,7 +215,30 @@ def get_job(job_id: int):
     if not job or job.user_id != current_user.id:
         return "", 404
 
-    return render_template("partials/job_card.html", job=job)
+    response = render_template("partials/job_card.html", job=job)
+    
+    # If job just completed, also refresh the file browser via OOB swap
+    if job.status == JobStatus.COMPLETED:
+        lectures = (
+            Lecture.query.filter_by(user_id=current_user.id)
+            .order_by(Lecture.date.desc())
+            .all()
+        )
+        lectures_by_date = {}
+        for lecture in lectures:
+            date_key = lecture.date.strftime("%Y-%m-%d")
+            if date_key not in lectures_by_date:
+                lectures_by_date[date_key] = []
+            lectures_by_date[date_key].append(lecture)
+        
+        file_browser = render_template(
+            "partials/file_browser.html", 
+            lectures_by_date=lectures_by_date,
+            oob=True
+        )
+        response += file_browser
+
+    return response
 
 
 @api_bp.route("/jobs/<int:job_id>/cancel", methods=["DELETE"])
@@ -267,9 +293,12 @@ def retry_job(job_id: int):
 @api_bp.route("/jobs")
 @login_required
 def get_jobs():
-    """Get all jobs for the current user."""
+    """Get active jobs for the current user."""
+    from models import JobStatus
+    
     jobs = (
         Job.query.filter_by(user_id=current_user.id)
+        .filter(Job.status.in_([JobStatus.PENDING, JobStatus.RUNNING]))
         .order_by(Job.created_at.desc())
         .limit(50)
         .all()
