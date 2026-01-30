@@ -60,6 +60,8 @@ def generate_component(cookie: str | None = None, url: str | None = None):
             is_panopto = bool(cookie and url)
             if is_panopto:
                 ui.label("Generating handout from Panopto video")
+                link_input = None
+                upload = None
             else:
                 link_input = (
                     ui.input(label="Link to Video")
@@ -84,8 +86,10 @@ def generate_component(cookie: str | None = None, url: str | None = None):
                 ui.notify("Please provide a link or upload a file.", color="red")
                 return
             state.generate()
-            link_input.set_value("")
-            upload.reset()
+            if link_input:
+                link_input.set_value("")
+            if upload:
+                upload.reset()
 
         ui.button("Generate").bind_enabled_from(state, "can_generate").on_click(
             handle_generate
