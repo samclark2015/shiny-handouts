@@ -1,0 +1,66 @@
+services:
+  # Flask web application
+  web:
+    build: .
+    ports:
+      - "5001:5000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - db
+      - redis
+    command: gunicorn -w 4 -b 0.0.0.0:5000 app:app
+
+  # Celery worker for background tasks
+  celery-worker:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - db
+      - redis
+    command: celery -A celery_app worker --loglevel=info --concurrency=4
+
+  # Celery beat for scheduled tasks (optional)
+  celery-beat:
+    build: .
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    command: celery -A celery_app beat --loglevel=info
+
+  # PostgreSQL database
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=handouts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery broker and caching
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

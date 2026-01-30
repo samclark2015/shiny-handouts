@@ -1,0 +1,6 @@
+{# Job list partial for HTMX updates #}
+{% for job in jobs %}
+    {% include "partials/job_card.html" %}
+{% else %}
+    <p class="text-gray-500 text-center py-4">No active jobs</p>
+{% endfor %}

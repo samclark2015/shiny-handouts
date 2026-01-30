@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Shiny Handouts{% endblock %}
+
+{% block body %}
+<div class="min-h-screen flex items-center justify-center bg-gray-100">
+    <div class="max-w-md w-full">
+        <div class="bg-white rounded-lg shadow-md p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900">Shiny Handouts</h1>
+                <p class="mt-2 text-gray-600">Welcome! Please log in to continue.</p>
+            </div>
+            
+            <p class="text-gray-600 text-center mb-6">
+                This site allows you to access and manage lecture handouts securely.
+                You must log in to use the site.
+            </p>
+            
+            <a href="{{ url_for('auth.oauth_login') }}" 
+               class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-3 rounded-md font-medium transition-colors flex items-center justify-center">
+                <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                </svg>
+                Login with Authentik
+            </a>
+            
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="mt-4 p-4 rounded-md {% if category == 'error' %}bg-red-100 text-red-700{% else %}bg-blue-100 text-blue-700{% endif %}">
+                            {{ message }}
+                        </div>
+                    {% endfor %}
+                {% endif %}
+            {% endwith %}
+        </div>
+        
+        <p class="mt-4 text-center text-sm text-gray-500">
+            Having trouble logging in? Contact your administrator.
+        </p>
+    </div>
+</div>
+{% endblock %}

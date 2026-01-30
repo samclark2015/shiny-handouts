@@ -1,0 +1,72 @@
+{# File browser partial with nested Date -> Lecture -> Artifacts hierarchy #}
+{% if lectures_by_date %}
+    <div class="space-y-2">
+        {% for date_key, lectures in lectures_by_date.items() %}
+            <details class="border rounded-md">
+                <summary class="px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-t-md font-medium text-gray-700">
+                    📅 {{ date_key }}
+                    <span class="text-sm text-gray-500 ml-2">({{ lectures|length }} lecture{{ 's' if lectures|length > 1 else '' }})</span>
+                </summary>
+                
+                <div class="pl-6 py-2 space-y-2">
+                    {% for lecture in lectures %}
+                        <details class="border-l-2 border-gray-200 pl-4">
+                            <summary class="py-1 hover:text-blue-600 cursor-pointer font-medium">
+                                📚 {{ lecture.title }}
+                                <span class="text-sm text-gray-500 ml-2">({{ lecture.artifacts|length }} file{{ 's' if lecture.artifacts|length > 1 else '' }})</span>
+                            </summary>
+                            
+                            <div class="pl-4 py-2 space-y-1">
+                                {% for artifact in lecture.artifacts %}
+                                    <div class="flex items-center space-x-2 text-sm">
+                                        {% if artifact.artifact_type.value == 'pdf_handout' %}
+                                            <span class="text-red-600">📄</span>
+                                            <span class="text-gray-500">PDF Handout</span>
+                                        {% elif artifact.artifact_type.value == 'excel_study_table' %}
+                                            <span class="text-green-600">📊</span>
+                                            <span class="text-gray-500">Excel Study Table</span>
+                                        {% elif artifact.artifact_type.value == 'pdf_vignette' %}
+                                            <span class="text-purple-600">📝</span>
+                                            <span class="text-gray-500">Vignette Questions</span>
+                                        {% else %}
+                                            <span>📎</span>
+                                            <span class="text-gray-500">File</span>
+                                        {% endif %}
+                                        
+                                        <a href="{{ url_for('main.serve_file', filename=artifact.file_name) }}"
+                                           target="_blank"
+                                           class="text-blue-600 hover:text-blue-800 hover:underline truncate flex-1">
+                                            {{ artifact.file_name }}
+                                        </a>
+                                        
+                                        {% if artifact.file_size %}
+                                            <span class="text-gray-400 text-xs">
+                                                {% if artifact.file_size > 1048576 %}
+                                                    {{ (artifact.file_size / 1048576)|round(1) }} MB
+                                                {% elif artifact.file_size > 1024 %}
+                                                    {{ (artifact.file_size / 1024)|round(1) }} KB
+                                                {% else %}
+                                                    {{ artifact.file_size }} B
+                                                {% endif %}
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    <p class="text-gray-500 text-sm">No files generated yet</p>
+                                {% endfor %}
+                            </div>
+                        </details>
+                    {% endfor %}
+                </div>
+            </details>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-8">
+        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"/>
+        </svg>
+        <h3 class="mt-2 text-sm font-medium text-gray-900">No files yet</h3>
+        <p class="mt-1 text-sm text-gray-500">Upload a video to generate handouts.</p>
+    </div>
+{% endif %}
