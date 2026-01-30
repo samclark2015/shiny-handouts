@@ -1,0 +1,18 @@
+# Development overrides - automatically merged with docker-compose.yml
+# This file enables hot-reload for local development
+
+services:
+  web:
+    volumes:
+      - ./data:/app/data
+      - .:/app  # Mount entire source directory
+    command: flask run --host=0.0.0.0 --debug --reload
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+
+  celery-worker:
+    volumes:
+      - ./data:/app/data
+      - .:/app  # Mount entire source directory
+    command: watchmedo auto-restart --directory=./ --pattern=*.py --recursive -- celery -A celery_app worker --loglevel=info --concurrency=2
