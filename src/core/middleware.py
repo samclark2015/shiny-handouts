@@ -31,19 +31,24 @@ class PipelineErrorMiddleware(TaskiqMiddleware):
         if not result.is_err:
             return
 
+        from core.tasks import JobCancelledException
+
+        if isinstance(result.error, JobCancelledException):
+            # Job was cancelled, no need to mark as failed
+            logger.info(
+                f"Pipeline task {message.task_name} for job {self._extract_job_id(message)} was cancelled."
+            )
+            return
+
         # Extract job_id from task arguments
         job_id = self._extract_job_id(message)
         if not job_id:
-            logger.warning(
-                f"Task {message.task_name} failed but no job_id found in args"
-            )
+            logger.warning(f"Task {message.task_name} failed but no job_id found in args")
             return
 
         error_message = self._format_error(result.error)
 
-        logger.error(
-            f"Pipeline task {message.task_name} failed for job {job_id}: {error_message}"
-        )
+        logger.error(f"Pipeline task {message.task_name} failed for job {job_id}: {error_message}")
 
         # Update job status in database
         await self._mark_job_failed(job_id, error_message)

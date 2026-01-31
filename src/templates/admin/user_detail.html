@@ -52,8 +52,8 @@
                     <form method="post" action="{% url 'admin:toggle_admin' user.id %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" 
-                                class="px-4 py-2 text-sm font-medium rounded-md {% if user.is_admin %}bg-gray-600 hover:bg-gray-700{% else %}bg-blue-600 hover:bg-blue-700{% endif %} text-white transition-colors">
-                            {% if user.is_admin %}Remove Admin{% else %}Make Admin{% endif %}
+                                class="px-4 py-2 text-sm font-medium rounded-md {% if user.is_superuser %}bg-gray-600 hover:bg-gray-700{% else %}bg-blue-600 hover:bg-blue-700{% endif %} text-white transition-colors">
+                            {% if user.is_superuser %}Remove Admin{% else %}Make Admin{% endif %}
                         </button>
                     </form>
                     <form method="post" action="{% url 'admin:delete_user' user.id %}" class="inline"
@@ -87,7 +87,7 @@
                 <div>
                     <p class="text-sm text-gray-500">Role</p>
                     <p>
-                        {% if user.is_admin %}
+                        {% if user.is_superuser %}
                             <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Admin</span>
                         {% else %}
                             <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">User</span>

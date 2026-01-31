@@ -189,15 +189,10 @@ def cancel_job(request, job_id: int):
     job = get_object_or_404(Job, id=job_id, user=request.user)
 
     if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
-        # Cancel the task using taskiq-cancellation
-        if job.taskiq_task_id:
-            from core.tasks import cancellation_backend
-
-            asyncio.run(cancellation_backend.cancel(job.taskiq_task_id))
-
-        job.status = JobStatus.CANCELLED
-        job.completed_at = datetime.now(timezone.utc)
-        job.save(update_fields=["status", "completed_at"])
+        # Mark job as cancelling - tasks will check this, delete the job, and stop
+        job.status = JobStatus.CANCELLING
+        job.current_stage = "Cancelling..."
+        job.save(update_fields=["status", "current_stage"])
 
     return render(request, "partials/job_card.html", {"job": job})
 

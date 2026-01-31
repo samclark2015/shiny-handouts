@@ -32,8 +32,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from taskiq import TaskiqEvents
-from taskiq_cancellation import CancellationType
-from taskiq_cancellation.backends.redis import RedisCancellationBackend
 from taskiq_pipelines import Pipeline, PipelineMiddleware
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 from xhtml2pdf import pisa
@@ -78,14 +76,28 @@ broker = (
     )
 )
 
-# Create cancellation backend for task cancellation support
-cancellation_backend = RedisCancellationBackend(REDIS_URL).with_broker(broker)
-
 
 # Ensure directories exist
 os.makedirs(IN_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(FRAMES_DIR, exist_ok=True)
+
+
+class JobCancelledException(Exception):
+    """Raised when a job has been cancelled."""
+
+    pass
+
+
+async def check_job_cancelled(job_id: int) -> bool:
+    """Check if a job has been cancelled or is being cancelled."""
+    from core.models import Job, JobStatus
+
+    try:
+        job = await Job.objects.aget(id=job_id)
+        return job.status in (JobStatus.CANCELLING, JobStatus.CANCELLED)
+    except Job.DoesNotExist:
+        return True  # Treat missing job as cancelled
 
 
 @dataclass
@@ -145,11 +157,23 @@ async def publish_progress(job_id: int, stage: str, progress: float, message: st
 
 
 async def update_job_progress(job_id: int, stage: str, progress: float, message: str) -> None:
-    """Update job progress in the database and publish to Redis."""
+    """Update job progress in the database and publish to Redis.
+
+    Also checks for cancellation and raises JobCancelledException if cancelled.
+    """
     from core.models import Job, JobStatus
 
     try:
         job = await Job.objects.aget(id=job_id)
+
+        # Check for cancellation
+        if job.status in (JobStatus.CANCELLING):
+            job.status = JobStatus.CANCELLED
+            job.completed_at = datetime.now(timezone.utc)
+            await job.asave(update_fields=["status", "completed_at"])
+
+            raise JobCancelledException(f"Job {job_id} was cancelled")
+
         job.current_stage = message
         job.progress = progress
         if job.status == JobStatus.PENDING:
@@ -157,7 +181,7 @@ async def update_job_progress(job_id: int, stage: str, progress: float, message:
             job.started_at = datetime.now(timezone.utc)
         await job.asave(update_fields=["current_stage", "progress", "status", "started_at"])
     except Job.DoesNotExist:
-        pass
+        raise JobCancelledException(f"Job {job_id} no longer exists") from None
 
     await publish_progress(job_id, stage, progress, message)
 
@@ -232,9 +256,6 @@ async def on_worker_startup(state):
 
     django.setup()
 
-    # Start cancellation backend
-    await cancellation_backend.startup()
-
     # Store Redis connection for pub/sub in state
     state.redis = await aioredis.from_url(REDIS_URL)
 
@@ -242,9 +263,6 @@ async def on_worker_startup(state):
 @broker.on_event(TaskiqEvents.WORKER_SHUTDOWN)
 async def on_worker_shutdown(state):
     """Cleanup when worker shuts down."""
-    # Shutdown cancellation backend
-    await cancellation_backend.shutdown()
-
     if hasattr(state, "redis"):
         await state.redis.close()
 
@@ -252,11 +270,14 @@ async def on_worker_shutdown(state):
 # Pipeline stage tasks
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_context_task(job_id: int, input_type: str, input_data: str) -> dict:
     """Generate processing context from input."""
     from accounts.models import UserSettings
     from core.models import Job
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     stage_name = "generate_context"
 
@@ -309,13 +330,16 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def download_video_task(data: dict) -> dict:
     """Download video if it doesn't exist."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "download_video"
     cache = CacheContext(ctx.source_id)
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Checking video")
 
@@ -354,13 +378,16 @@ async def download_video_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def extract_captions_task(data: dict) -> dict:
     """Extract captions from the video."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "extract_captions"
     cache = CacheContext(ctx.source_id)
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Extracting captions")
 
@@ -384,13 +411,16 @@ async def extract_captions_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def match_frames_task(data: dict) -> dict:
     """Match frames to captions based on structural similarity."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "match_frames"
     cache = CacheContext(ctx.source_id)
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Matching frames")
 
@@ -464,13 +494,16 @@ async def match_frames_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def transform_slides_ai_task(data: dict) -> dict:
     """Apply AI transformation to slides."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "transform_slides_with_ai"
     cache = CacheContext(ctx.source_id)
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Transforming slides with AI")
 
@@ -511,13 +544,16 @@ async def transform_slides_ai_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_output_task(data: dict) -> dict:
     """Generate the PDF output."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "generate_output"
     cache = CacheContext(ctx.source_id)
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Generating PDF")
 
@@ -561,12 +597,15 @@ async def generate_output_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def compress_pdf_task(data: dict) -> dict:
     """Compress the PDF using Ghostscript."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "compress_pdf"
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Compressing PDF")
 
@@ -609,12 +648,15 @@ async def compress_pdf_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_spreadsheet_task(data: dict) -> dict:
     """Generate the Excel spreadsheet."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "generate_spreadsheet"
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     # Skip if Excel generation is disabled
     if not ctx.enable_excel:
@@ -703,12 +745,15 @@ async def generate_spreadsheet_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def generate_vignette_task(data: dict) -> dict:
     """Generate the vignette PDF."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "generate_vignette_pdf"
+
+    # Check for cancellation
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     # Skip if vignette generation is disabled
     if not ctx.enable_vignette:
@@ -769,11 +814,14 @@ async def generate_vignette_task(data: dict) -> dict:
 
 
 @broker.task
-@cancellation_backend.cancellable(cancellation_type=CancellationType.EDGE)
 async def finalize_job_task(data: dict) -> dict:
     """Finalize the job and create database records."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+
+    # Check for cancellation - don't finalize cancelled jobs
+    if await check_job_cancelled(job_id):
+        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     outputs = ctx.outputs or {}
     outputs["source_id"] = ctx.source_id

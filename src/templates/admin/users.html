@@ -63,7 +63,7 @@
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ user.name }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ user.email }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    {% if user.is_admin %}
+                                    {% if user.is_superuser %}
                                         <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Admin</span>
                                     {% else %}
                                         <span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800">User</span>

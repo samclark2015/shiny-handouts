@@ -19,6 +19,7 @@ class JobStatus(models.TextChoices):
     RUNNING = "running", "Running"
     COMPLETED = "completed", "Completed"
     FAILED = "failed", "Failed"
+    CANCELLING = "cancelling", "Cancelling"
     CANCELLED = "cancelled", "Cancelled"
 
 

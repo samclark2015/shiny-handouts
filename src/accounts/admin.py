@@ -35,8 +35,8 @@ class UserSettingsInline(admin.StackedInline):
 class UserAdmin(BaseUserAdmin):
     """Admin configuration for custom User model."""
 
-    list_display = ("email", "name", "is_admin", "is_staff", "created_at", "last_login")
-    list_filter = ("is_admin", "is_staff", "is_active", "created_at")
+    list_display = ("email", "name", "is_superuser", "is_staff", "created_at", "last_login")
+    list_filter = ("is_superuser", "is_staff", "is_active", "created_at")
     search_fields = ("email", "name", "oauth_id")
     ordering = ("-created_at",)
     readonly_fields = ("created_at", "last_login", "oauth_id")
@@ -51,7 +51,6 @@ class UserAdmin(BaseUserAdmin):
                 "fields": (
                     "is_active",
                     "is_staff",
-                    "is_admin",
                     "is_superuser",
                     "groups",
                     "user_permissions",

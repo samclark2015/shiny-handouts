@@ -10,8 +10,8 @@
         <h1 class="text-2xl font-bold text-gray-900">Lecture Handouts</h1>
         <div class="flex items-center space-x-4">
             <span class="text-gray-600">{{ user.name }}</span>
-            {% if user.is_admin %}
-            <a href="{% url 'admin:dashboard' %}" 
+            {% if user.is_superuser %}
+            <a href="{% url 'admin:index' %}" 
                class="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
                 Admin
             </a>

@@ -160,7 +160,7 @@
                                 <p class="text-sm font-medium text-gray-900">{{ user.name }}</p>
                                 <p class="text-sm text-gray-500">{{ user.email }}</p>
                             </div>
-                            {% if user.is_admin %}
+                            {% if user.is_superuser %}
                             <span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800">Admin</span>
                             {% endif %}
                         </div>
