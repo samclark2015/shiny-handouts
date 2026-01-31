@@ -1,3 +1,4 @@
+{% load tz %}
 {# Job card partial for HTMX updates #}
 {# Set animate=true when rendering new job cards to get fade-in effect #}
 <div id="job-{{ job.pk }}" 
@@ -92,6 +93,7 @@
     
     {# Status text #}
     <div class="text-sm text-gray-500">
+        {% localtime on %}
         {% if job.status == 'completed' %}
             Completed {{ job.completed_at|date:"m/d/Y g:i A" }}
         {% elif job.status == 'failed' %}
@@ -103,5 +105,6 @@
         {% else %}
             Started {{ job.created_at|date:"m/d/Y g:i A" }}
         {% endif %}
+        {% endlocaltime %}
     </div>
 </div>

@@ -101,6 +101,16 @@
     </div>
     
     <script>
+        // Set timezone cookie for server-side time conversion
+        (function() {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            if (tz && document.cookie.indexOf('user_timezone=') === -1) {
+                document.cookie = 'user_timezone=' + tz + '; path=/; max-age=31536000; SameSite=Lax';
+                // Reload to apply timezone on first visit
+                location.reload();
+            }
+        })();
+        
         function openBugReportModal() {
             document.getElementById('bug-report-modal').classList.remove('hidden');
             document.getElementById('bug-title').focus();

@@ -54,6 +54,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "allauth.account.middleware.AccountMiddleware",
+    "core.timezone_middleware.TimezoneMiddleware",
 ]
 
 ROOT_URLCONF = "handout_generator.urls"

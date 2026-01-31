@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load tz %}
 
 {% block title %}Course Profiles{% endblock %}
 
@@ -59,10 +60,12 @@
                         {% endif %}
                     </h3>
                     <p class="text-xs text-gray-500 mt-1">
+                        {% localtime on %}
                         Created {{ profile.created_at|date:"M d, Y" }}
                         {% if profile.updated_at != profile.created_at %}
                         • Updated {{ profile.updated_at|date:"M d, Y" }}
                         {% endif %}
+                        {% endlocaltime %}
                     </p>
                 </div>
                 <div class="flex space-x-2">
