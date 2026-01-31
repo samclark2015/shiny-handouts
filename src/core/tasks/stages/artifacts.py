@@ -207,9 +207,9 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
 
 @broker.task
 async def generate_mindmap_artifact_task(data: dict) -> dict:
-    """Generate mindmap Mermaid file as a distributed task.
+    """Generate mindmap Mermaid file(s) as a distributed task.
 
-    Returns dict with mindmap_path if successful, empty dict if skipped/failed.
+    Returns dict with mindmap_paths (list) if successful, empty dict if skipped/failed.
     """
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
@@ -225,27 +225,41 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
         return {}
 
     try:
-        mermaid_code = await generate_mindmap(
+        mindmaps = await generate_mindmap(
             pdf_path,
             custom_prompt=ctx.mindmap_prompt,
         )
 
-        if not mermaid_code:
+        if not mindmaps:
             return {}
 
         base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        mindmap_path = os.path.join(OUT_DIR, f"{base_name} - Mindmap.mmd")
+        mindmap_paths = []
 
-        # Save mermaid code as text file
-        with open(mindmap_path, "w", encoding="utf-8") as f:
-            f.write(mermaid_code)
-
-        # Create artifact
+        # Create artifact import
         from core.models import ArtifactType
 
-        await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, mindmap_path, ctx.source_id)
+        for i, (title, mermaid_code) in enumerate(mindmaps):
+            # Sanitize title for filename
+            safe_title = "".join(c for c in title if c.isalnum() or c in " -_").strip()
+            if not safe_title:
+                safe_title = f"Mindmap {i + 1}"
 
-        return {"mindmap_path": mindmap_path}
+            # If only one mindmap, use simpler naming
+            if len(mindmaps) == 1:
+                mindmap_path = os.path.join(OUT_DIR, f"{base_name} - {safe_title}.mmd")
+            else:
+                mindmap_path = os.path.join(OUT_DIR, f"{base_name} - {safe_title}.mmd")
+
+            # Save mermaid code as text file
+            with open(mindmap_path, "w", encoding="utf-8") as f:
+                f.write(mermaid_code)
+
+            # Create artifact for each mindmap
+            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, mindmap_path, ctx.source_id)
+            mindmap_paths.append(mindmap_path)
+
+        return {"mindmap_paths": mindmap_paths}
     except Exception as e:
         logging.exception(f"Failed to generate mindmap: {e}")
         return {}

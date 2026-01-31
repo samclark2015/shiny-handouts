@@ -266,15 +266,15 @@ async def generate_vignette_questions(
 async def generate_mindmap(
     filename: str,
     custom_prompt: str | None = None,
-) -> str:
-    """Generate a Mermaid mindmap diagram from a PDF file.
+) -> list[tuple[str, str]]:
+    """Generate one or more Mermaid mindmap diagrams from a PDF file.
 
     Args:
         filename: Path to the PDF file.
         custom_prompt: Optional custom prompt to use instead of default.
 
     Returns:
-        Mermaid mindmap code as a string.
+        List of tuples containing (title, mermaid_code) for each mindmap.
     """
     prompt = custom_prompt or read_prompt("generate_mindmap")
 
@@ -304,4 +304,4 @@ async def generate_mindmap(
     if not value:
         raise ValueError("No output received from LLM")
     parsed = MindmapResponse.model_validate_json(value)
-    return parsed.mermaid_code
+    return [(m.title, m.mermaid_code) for m in parsed.mindmaps]

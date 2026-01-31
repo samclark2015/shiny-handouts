@@ -52,9 +52,20 @@ class VignetteQuestions(BaseModel):
     )
 
 
-class MindmapResponse(BaseModel):
-    """Response containing a Mermaid mindmap diagram."""
+class Mindmap(BaseModel):
+    """A single mindmap with title and Mermaid code."""
 
+    title: str = Field(
+        description="Short descriptive title for the mindmap (e.g., 'Glomerular Disease Classification')"
+    )
     mermaid_code: str = Field(
         description="Valid Mermaid mindmap syntax starting with 'mindmap'"
+    )
+
+
+class MindmapResponse(BaseModel):
+    """Response containing one or more Mermaid mindmap diagrams."""
+
+    mindmaps: list[Mindmap] = Field(
+        description="List of mindmaps, one per disease type covered in the lecture"
     )
