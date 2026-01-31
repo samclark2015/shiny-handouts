@@ -7,16 +7,7 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     ghostscript \
     libpq-dev \
-    curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js for mermaid-cli
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install mermaid-cli globally
-RUN npm install -g @mermaid-js/mermaid-cli
 
 WORKDIR /app
 

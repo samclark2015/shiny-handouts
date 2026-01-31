@@ -11,13 +11,23 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.AddField(
-            model_name='job',
-            name='enable_mindmap',
-            field=models.BooleanField(default=True, help_text='Generate mindmap diagram for this job'),
+            model_name="job",
+            name="enable_mindmap",
+            field=models.BooleanField(
+                default=True, help_text="Generate mindmap diagram for this job"
+            ),
         ),
         migrations.AlterField(
-            model_name='artifact',
-            name='artifact_type',
-            field=models.CharField(choices=[('pdf_handout', 'PDF Handout'), ('excel_study_table', 'Excel Study Table'), ('pdf_vignette', 'PDF Vignette'), ('png_mindmap', 'PNG Mindmap')], max_length=30),
+            model_name="artifact",
+            name="artifact_type",
+            field=models.CharField(
+                choices=[
+                    ("pdf_handout", "PDF Handout"),
+                    ("excel_study_table", "Excel Study Table"),
+                    ("pdf_vignette", "PDF Vignette"),
+                    ("mermaid_mindmap", "Mermaid Mindmap"),
+                ],
+                max_length=30,
+            ),
         ),
     ]

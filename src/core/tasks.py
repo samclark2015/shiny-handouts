@@ -1072,39 +1072,6 @@ async def finalize_job_task(data: dict) -> dict:
     return {"job_id": job_id, "status": "completed", "outputs": outputs}
 
 
-async def _render_mermaid_to_png(mermaid_code: str, output_path: str) -> None:
-    """Render Mermaid diagram code to a PNG image using mermaid-cli.
-
-    Args:
-        mermaid_code: The Mermaid diagram code
-        output_path: Path where the PNG file will be saved
-    """
-    with TemporaryDirectory() as temp_dir:
-        mmd_file = os.path.join(temp_dir, "diagram.mmd")
-        with open(mmd_file, "w") as f:
-            f.write(mermaid_code)
-
-        result = await asyncio.to_thread(
-            subprocess.run,
-            [
-                "mmdc",
-                "-i",
-                mmd_file,
-                "-o",
-                output_path,
-                "-b",
-                "white",
-                "-s",
-                "2",  # Scale factor for higher quality
-            ],
-            capture_output=True,
-            text=True,
-        )
-
-        if result.returncode != 0:
-            raise ValueError(f"Mermaid CLI failed: {result.stderr}")
-
-
 @broker.task
 async def generate_spreadsheet_artifact_task(data: dict) -> dict:
     """Generate Excel spreadsheet artifact as a distributed task.
@@ -1291,7 +1258,7 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
 
 @broker.task
 async def generate_mindmap_artifact_task(data: dict) -> dict:
-    """Generate mindmap PNG artifact as a distributed task.
+    """Generate mindmap Mermaid file as a distributed task.
 
     Returns dict with mindmap_path if successful, empty dict if skipped/failed.
     """
@@ -1318,14 +1285,16 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
             return {}
 
         base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        mindmap_path = os.path.join(OUT_DIR, f"{base_name} - Mindmap.png")
+        mindmap_path = os.path.join(OUT_DIR, f"{base_name} - Mindmap.mmd")
 
-        await _render_mermaid_to_png(mermaid_code, mindmap_path)
+        # Save mermaid code as text file
+        with open(mindmap_path, "w", encoding="utf-8") as f:
+            f.write(mermaid_code)
 
         # Create artifact
         from core.models import ArtifactType
 
-        await create_artifact(job_id, ArtifactType.PNG_MINDMAP, mindmap_path, ctx.source_id)
+        await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, mindmap_path, ctx.source_id)
 
         return {"mindmap_path": mindmap_path}
     except Exception as e:

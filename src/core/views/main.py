@@ -1,5 +1,7 @@
 """Main views for the dashboard and file serving."""
 
+import os
+
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404
@@ -53,8 +55,6 @@ def index(request):
 @login_required
 def serve_file(request, filename: str):
     """Serve generated files."""
-    import os
-
     file_path = os.path.join(settings.OUTPUT_DIR, filename)
 
     if not os.path.exists(file_path):
@@ -71,4 +71,40 @@ def serve_file(request, filename: str):
         open(file_path, "rb"),
         as_attachment=True,
         filename=os.path.basename(filename),
+    )
+
+
+@login_required
+def render_mindmap(request, filename: str):
+    """Render a Mermaid mindmap file in the browser."""
+    # Only allow .mmd files
+    if not filename.endswith(".mmd"):
+        raise Http404("File not found")
+
+    file_path = os.path.join(settings.OUTPUT_DIR, filename)
+
+    if not os.path.exists(file_path):
+        raise Http404("File not found")
+
+    # Security check: ensure file is within OUTPUT_DIR
+    real_path = os.path.realpath(file_path)
+    real_output_dir = os.path.realpath(settings.OUTPUT_DIR)
+
+    if not real_path.startswith(real_output_dir):
+        raise Http404("File not found")
+
+    # Read the mermaid code
+    with open(file_path, "r", encoding="utf-8") as f:
+        mermaid_code = f.read()
+
+    # Get the title from the filename
+    title = os.path.splitext(os.path.basename(filename))[0]
+
+    return render(
+        request,
+        "mindmap.html",
+        {
+            "mermaid_code": mermaid_code,
+            "title": title,
+        },
     )

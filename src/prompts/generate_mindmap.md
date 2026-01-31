@@ -7,7 +7,7 @@ Instructions:
 2. Create a Mermaid mindmap diagram that:
    - Has the main lecture topic as the root node
    - Organizes key concepts hierarchically under relevant branches
-   - Uses 2-4 levels of depth for optimal readability
+   - Uses 4-6 levels of depth for optimal readability
    - Groups related concepts together logically
    - Limits each branch to 3-7 sub-nodes for clarity
 

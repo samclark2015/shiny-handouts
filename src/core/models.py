@@ -29,7 +29,7 @@ class ArtifactType(models.TextChoices):
     PDF_HANDOUT = "pdf_handout", "PDF Handout"
     EXCEL_STUDY_TABLE = "excel_study_table", "Excel Study Table"
     PDF_VIGNETTE = "pdf_vignette", "PDF Vignette"
-    PNG_MINDMAP = "png_mindmap", "PNG Mindmap"
+    MERMAID_MINDMAP = "mermaid_mindmap", "Mermaid Mindmap"
 
 
 class Job(models.Model):

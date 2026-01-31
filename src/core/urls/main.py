@@ -9,5 +9,6 @@ app_name = "main"
 urlpatterns = [
     path("", main.index, name="index"),
     path("files/<path:filename>", main.serve_file, name="serve_file"),
+    path("mindmap/<path:filename>", main.render_mindmap, name="render_mindmap"),
     path("bug-report/", api.submit_bug_report, name="submit_bug_report"),
 ]
