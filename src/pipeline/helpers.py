@@ -51,7 +51,8 @@ def parse_markdown_bold_to_rich_text(text: str) -> CellRichText | str:
         if match.start() > last_end:
             non_bold_text = text[last_end : match.start()]
             if non_bold_text:
-                parts.append(non_bold_text)
+                # Wrap plain text in TextBlock with default font for consistency
+                parts.append(TextBlock(InlineFont(), non_bold_text))
 
         # Add bold text
         bold_text = match.group(1)
@@ -65,7 +66,8 @@ def parse_markdown_bold_to_rich_text(text: str) -> CellRichText | str:
     if last_end < len(text):
         remaining_text = text[last_end:]
         if remaining_text:
-            parts.append(remaining_text)
+            # Wrap plain text in TextBlock with default font for consistency
+            parts.append(TextBlock(InlineFont(), remaining_text))
 
     # Return CellRichText if we have parts, otherwise original text
     if parts:
