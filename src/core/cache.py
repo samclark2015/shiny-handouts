@@ -1,13 +1,13 @@
 """
-Redis-based caching for pipeline stages.
+Redis-based caching for AI function results.
 
-Provides caching functionality for pipeline task results.
+Provides caching functionality for AI function calls to prevent unnecessary API expenses.
 """
 
 import hashlib
 import os
 import pickle
-from typing import Any, Optional
+from typing import Any
 
 import redis
 
@@ -35,67 +35,6 @@ def close_cache() -> None:
     if _redis_client is not None:
         _redis_client.close()
         _redis_client = None
-
-
-def _generate_cache_key(source_id: str, stage_name: str) -> str:
-    """Generate a unique cache key for a stage result."""
-    key_data = f"pipeline:{source_id}:{stage_name}"
-    return hashlib.sha256(key_data.encode()).hexdigest()
-
-
-def get_cached_result(source_id: str, stage_name: str) -> Any | None:
-    """
-    Retrieve a cached result for a specific stage.
-
-    Args:
-        source_id: The unique identifier for the source (e.g., video hash)
-        stage_name: The name of the pipeline stage
-
-    Returns:
-        The cached result if found, None otherwise
-    """
-    client = get_redis_client()
-    key = _generate_cache_key(source_id, stage_name)
-
-    try:
-        cached_data = client.get(key)
-        if cached_data is not None:
-            return pickle.loads(cached_data)
-    except (pickle.PickleError, redis.RedisError) as e:
-        print(f"Cache read error: {e}")
-
-    return None
-
-
-def set_cached_result(source_id: str, stage_name: str, result: Any) -> None:
-    """
-    Store a result in the cache.
-
-    Args:
-        source_id: The unique identifier for the source
-        stage_name: The name of the pipeline stage
-        result: The result to cache
-    """
-    client = get_redis_client()
-    key = _generate_cache_key(source_id, stage_name)
-
-    try:
-        serialized = pickle.dumps(result)
-        client.setex(key, CACHE_EXPIRY, serialized)
-    except (pickle.PickleError, redis.RedisError) as e:
-        print(f"Cache write error: {e}")
-
-
-def delete_cached_result(source_id: str, stage_name: str) -> bool:
-    """Delete a cached result."""
-    client = get_redis_client()
-    key = _generate_cache_key(source_id, stage_name)
-
-    try:
-        return client.delete(key) > 0
-    except redis.RedisError as e:
-        print(f"Cache delete error: {e}")
-        return False
 
 
 def _generate_ai_cache_key(func_name: str, *args, **kwargs) -> str:
@@ -184,22 +123,3 @@ def set_ai_cached_result(func_name: str, result: Any, *args, **kwargs) -> None:
         client.setex(key, CACHE_EXPIRY, serialized)
     except (pickle.PickleError, redis.RedisError) as e:
         print(f"AI cache write error for {func_name}: {e}")
-
-
-class CacheContext:
-    """Context manager for caching pipeline stage results."""
-
-    def __init__(self, source_id: str):
-        self.source_id = source_id
-
-    def get(self, stage_name: str) -> Any | None:
-        """Get a cached result for a stage."""
-        return get_cached_result(self.source_id, stage_name)
-
-    def set(self, stage_name: str, result: Any) -> None:
-        """Set a cached result for a stage."""
-        set_cached_result(self.source_id, stage_name, result)
-
-    def delete(self, stage_name: str) -> bool:
-        """Delete a cached result for a stage."""
-        return delete_cached_result(self.source_id, stage_name)

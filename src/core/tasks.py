@@ -3,7 +3,6 @@ Taskiq tasks for the video processing pipeline.
 
 Converts the pipeline stages into Taskiq tasks with:
 - Progress reporting via Redis pub/sub
-- Stage-level caching via Redis
 - Pipeline chaining via taskiq-pipelines
 """
 
@@ -16,7 +15,6 @@ import shutil
 import subprocess
 import tempfile
 import urllib.request
-from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from tempfile import TemporaryDirectory
@@ -51,7 +49,6 @@ from pipeline.ai import (
 )
 from pipeline.helpers import Caption, Slide, fetch, parse_markdown_bold_to_rich_text
 
-from .cache import CacheContext
 from .middleware import PipelineErrorMiddleware
 
 # Directory configuration
@@ -429,35 +426,6 @@ async def mark_job_completed(job_id: int, outputs: dict) -> None:
         pass
 
 
-@contextmanager
-def cache_context(ctx: TaskContext, stage_name: str):
-    """Context manager for stage-level caching.
-
-    Automatically updates ctx from cache if available and yields True.
-    Otherwise yields False and stores ctx in cache on exit.
-
-    Usage:
-        with cache_context(ctx, stage_name) as cache_hit:
-            if cache_hit:
-                return  # Skip execution, data loaded from cache
-            # ... do work ...
-    """
-    cache = CacheContext(ctx.source_id)
-
-    # Check cache on entry
-    cached = cache.get(stage_name)
-
-    if cached:
-        logging.info(f"Cache hit for stage {stage_name}, loading cached data")
-        ctx.update_from(TaskContext.from_dict({**cached, "job_id": ctx.job_id}))
-
-    yield bool(cached)  # Yield True if cache hit, False otherwise
-
-    # Store in cache on exit only if it wasn't cached
-    if not cached:
-        cache.set(stage_name, ctx.to_dict())
-
-
 # Worker lifecycle events
 
 
@@ -548,34 +516,28 @@ async def download_video_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Checking video")
 
-    # Check cache first
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "Video downloaded")
+    video_path = ctx.get_video_path()
+
+    if ctx.input_type == "upload":
+        upload_path = ctx.input_data.get("path", "")
+        if os.path.exists(upload_path):
+            ctx.video_path = upload_path
+            await update_job_progress(job_id, stage_name, 1.0, "Video ready")
             return ctx.to_dict()
 
-        video_path = ctx.get_video_path()
-
-        if ctx.input_type == "upload":
-            upload_path = ctx.input_data.get("path", "")
-            if os.path.exists(upload_path):
-                ctx.video_path = upload_path
-                await update_job_progress(job_id, stage_name, 1.0, "Video ready")
-                return ctx.to_dict()
-
-        if ctx.input_type == "panopto":
-            await _download_panopto_video(job_id, stage_name, ctx.input_data, video_path)
+    if ctx.input_type == "panopto":
+        await _download_panopto_video(job_id, stage_name, ctx.input_data, video_path)
+    else:
+        video_url = ctx.input_data.get("url", "")
+        if _is_m3u8_url(video_url):
+            await _download_m3u8_stream(job_id, stage_name, video_url, video_path)
         else:
-            video_url = ctx.input_data.get("url", "")
-            if _is_m3u8_url(video_url):
-                await _download_m3u8_stream(job_id, stage_name, video_url, video_path)
-            else:
-                await _download_regular_video(job_id, stage_name, video_url, video_path)
+            await _download_regular_video(job_id, stage_name, video_url, video_path)
 
-            # Hash the downloaded file contents to generate source_id
-            ctx.source_id = await _hash_file(video_path)
+        # Hash the downloaded file contents to generate source_id
+        ctx.source_id = await _hash_file(video_path)
 
-        ctx.video_path = video_path
+    ctx.video_path = video_path
 
     await update_job_progress(job_id, stage_name, 1.0, "Video downloaded")
 
@@ -591,13 +553,8 @@ async def extract_captions_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Extracting captions")
 
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "Captions extracted")
-            return ctx.to_dict()
-
-        captions = await generate_captions(ctx.get_video_path())
-        ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
+    captions = await generate_captions(ctx.get_video_path())
+    ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
 
     await update_job_progress(job_id, stage_name, 1.0, "Captions extracted")
 
@@ -663,66 +620,61 @@ async def match_frames_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Matching frames")
 
-    # Check cache first
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
-            return ctx.to_dict()
+    if not ctx.captions:
+        ctx.slides = []
+        await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
+        return ctx.to_dict()
 
-        if not ctx.captions:
-            ctx.slides = []
-            return ctx.to_dict()
+    captions = [Caption(**c) for c in ctx.captions]
+    last_frame = None
+    last_frame_gs = None
+    cum_captions = []
+    pairs = []
 
-        captions = [Caption(**c) for c in ctx.captions]
-        last_frame = None
-        last_frame_gs = None
-        cum_captions = []
-        pairs = []
+    stream = cv2.VideoCapture()
+    stream.open(ctx.get_video_path())
 
-        stream = cv2.VideoCapture()
-        stream.open(ctx.get_video_path())
+    frame_path = os.path.join(FRAMES_DIR, ctx.source_id)
+    os.makedirs(frame_path, exist_ok=True)
 
-        frame_path = os.path.join(FRAMES_DIR, ctx.source_id)
-        os.makedirs(frame_path, exist_ok=True)
+    for idx, cap in enumerate(captions):
+        # Set video position to caption timestamp + 1.5s offset
+        stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
+        ret, frame = stream.read()
+        if not ret:
+            continue
 
-        for idx, cap in enumerate(captions):
-            # Set video position to caption timestamp + 1.5s offset
-            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
-            ret, frame = stream.read()
-            if not ret:
-                continue
+        # Downscale and convert to grayscale for comparison
+        frame_gs = preprocess_frame_for_comparison(frame, FRAME_SCALE_FACTOR)
 
-            # Downscale and convert to grayscale for comparison
-            frame_gs = preprocess_frame_for_comparison(frame, FRAME_SCALE_FACTOR)
-
-            if last_frame is None:
-                last_frame = frame
-                last_frame_gs = frame_gs
-                cum_captions.append(cap.text)
-                continue
-
-            # Edge-based comparison (works well for lecture slides)
-            score = compare_frames_edges(last_frame_gs, frame_gs)
-
-            # Threshold for edge correlation (0.92 = significant structural change)
-            if score < FRAME_SIMILARITY_THRESHOLD or (idx + 1) == len(captions):
-                cap_full = " ".join(cum_captions)
-                # Option 4: Use JPEG format for faster I/O
-                image_path = os.path.join(frame_path, f"{uuid4()}.jpg")
-                cv2.imwrite(image_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-                pairs.append({"image": image_path, "caption": cap_full, "extra": None})
-                last_frame = frame
-                last_frame_gs = frame_gs
-                cum_captions.clear()
-
-                progress = (idx + 1) / len(captions)
-                await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
-
+        if last_frame is None:
+            last_frame = frame
+            last_frame_gs = frame_gs
             cum_captions.append(cap.text)
+            continue
 
-        stream.release()
-        ctx.slides = pairs
+        # Edge-based comparison (works well for lecture slides)
+        score = compare_frames_edges(last_frame_gs, frame_gs)
+
+        # Threshold for edge correlation (0.92 = significant structural change)
+        if score < FRAME_SIMILARITY_THRESHOLD or (idx + 1) == len(captions):
+            cap_full = " ".join(cum_captions)
+            # Option 4: Use JPEG format for faster I/O
+            image_path = os.path.join(frame_path, f"{uuid4()}.jpg")
+            cv2.imwrite(image_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+            pairs.append({"image": image_path, "caption": cap_full, "extra": None})
+            last_frame = frame
+            last_frame_gs = frame_gs
+            cum_captions.clear()
+
+            progress = (idx + 1) / len(captions)
+            await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
+
+        cum_captions.append(cap.text)
+
+    stream.release()
+    ctx.slides = pairs
 
     await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
 
@@ -741,30 +693,24 @@ async def transform_slides_ai_task(data: dict) -> dict:
     if not ctx.use_ai or not ctx.slides:
         return ctx.to_dict()
 
-    # Check cache first
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "Slides transformed")
-            return ctx.to_dict()
+    output = []
+    slides = cast(list[dict], ctx.slides)
+    total = len(slides)
 
-        output = []
-        slides = cast(list[dict], ctx.slides)
-        total = len(slides)
+    for idx, slide in enumerate(slides):
+        cleaned = await clean_transcript(slide["caption"])
+        output.append(
+            {
+                "image": slide["image"],
+                "caption": cleaned,
+                "extra": slide.get("extra"),
+            }
+        )
 
-        for idx, slide in enumerate(slides):
-            cleaned = await clean_transcript(slide["caption"])
-            output.append(
-                {
-                    "image": slide["image"],
-                    "caption": cleaned,
-                    "extra": slide.get("extra"),
-                }
-            )
+        progress = (idx + 1) / total
+        await update_job_progress(job_id, stage_name, progress * 0.9, "Cleaning transcript")
 
-            progress = (idx + 1) / total
-            await update_job_progress(job_id, stage_name, progress * 0.9, "Cleaning transcript")
-
-        ctx.slides = output
+    ctx.slides = output
 
     await update_job_progress(job_id, stage_name, 1.0, "Slides transformed")
 
@@ -780,32 +726,26 @@ async def generate_output_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Generating PDF")
 
-    # Check cache first
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "PDF generated")
-            return ctx.to_dict()
+    # Convert slide dicts back to Slide namedtuples for template
+    slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
-        # Convert slide dicts back to Slide namedtuples for template
-        slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
+    template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
+    env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
+    template = env.get_template("template.html")
+    html = template.render(pairs=slides)
 
-        template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
-        env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
-        template = env.get_template("template.html")
-        html = template.render(pairs=slides)
+    await update_job_progress(job_id, stage_name, 0.3, "Generating title")
+    title = await generate_title(html)
+    await update_job_label(job_id, title)
 
-        await update_job_progress(job_id, stage_name, 0.3, "Generating title")
-        title = await generate_title(html)
-        await update_job_label(job_id, title)
+    path = os.path.join(OUT_DIR, f"{title}.pdf")
+    os.makedirs(OUT_DIR, exist_ok=True)
 
-        path = os.path.join(OUT_DIR, f"{title}.pdf")
-        os.makedirs(OUT_DIR, exist_ok=True)
-
-        await update_job_progress(job_id, stage_name, 0.5, "Creating PDF")
-        with open(path, "wb") as f:
-            pisa_status = pisa.CreatePDF(html, dest=f)
-            if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
-                raise ValueError("Error generating PDF")
+    await update_job_progress(job_id, stage_name, 0.5, "Creating PDF")
+    with open(path, "wb") as f:
+        pisa_status = pisa.CreatePDF(html, dest=f)
+        if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+            raise ValueError("Error generating PDF")
 
         ctx.outputs = ctx.outputs or {}
         ctx.outputs["pdf_path"] = path
@@ -831,39 +771,34 @@ async def compress_pdf_task(data: dict) -> dict:
 
     source_id = data.get("source_id", "")
 
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
-            return ctx.to_dict()
+    # Compress using Ghostscript
+    with TemporaryDirectory() as temp_dir:
+        output_path = os.path.join(temp_dir, f"compressed_{os.path.basename(pdf_path)}")
 
-        # Compress using Ghostscript
-        with TemporaryDirectory() as temp_dir:
-            output_path = os.path.join(temp_dir, f"compressed_{os.path.basename(pdf_path)}")
+        gs_command = [
+            "gs",
+            "-sDEVICE=pdfwrite",
+            "-dCompatibilityLevel=1.4",
+            "-dPDFSETTINGS=/ebook",
+            "-dNOPAUSE",
+            "-dQUIET",
+            "-dBATCH",
+            f"-sOutputFile={output_path}",
+            pdf_path,
+        ]
 
-            gs_command = [
-                "gs",
-                "-sDEVICE=pdfwrite",
-                "-dCompatibilityLevel=1.4",
-                "-dPDFSETTINGS=/ebook",
-                "-dNOPAUSE",
-                "-dQUIET",
-                "-dBATCH",
-                f"-sOutputFile={output_path}",
-                pdf_path,
-            ]
+        try:
+            await asyncio.to_thread(subprocess.run, gs_command, check=True)
+            shutil.move(output_path, pdf_path)
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            print(f"Ghostscript compression failed: {e}")
 
-            try:
-                await asyncio.to_thread(subprocess.run, gs_command, check=True)
-                shutil.move(output_path, pdf_path)
-            except (subprocess.CalledProcessError, FileNotFoundError) as e:
-                print(f"Ghostscript compression failed: {e}")
+    # Create artifact immediately
+    from core.models import ArtifactType
 
-        # Create artifact immediately
-        from core.models import ArtifactType
+    await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
 
-        await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
-
-        await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
+    await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
 
     return ctx.to_dict()
 
@@ -889,112 +824,105 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    with cache_context(ctx, stage_name) as cache_hit:
-        if cache_hit:
-            await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
-            return ctx.to_dict()
+    study_table = await generate_spreadsheet_helper(
+        pdf_path,
+        custom_prompt=ctx.spreadsheet_prompt,
+        custom_columns=ctx.spreadsheet_columns,
+    )
 
-        study_table = await generate_spreadsheet_helper(
-            pdf_path,
-            custom_prompt=ctx.spreadsheet_prompt,
-            custom_columns=ctx.spreadsheet_columns,
+    if not study_table.rows:
+        raise ValueError("No rows found in data")
+
+    df = pd.DataFrame(study_table.rows)
+
+    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
+
+    await update_job_progress(job_id, stage_name, 0.6, "Writing Excel file")
+
+    # Style constants - modify these to change colors
+    HEADER_BG_COLOR = "D3D3D3"  # Light grey
+    CELL_BG_COLOR = "ADD8E6"  # Baby blue
+    SECTION_HEADER_BG_COLOR = "6CB4E8"  # Darker blue for single-cell rows
+    BORDER_COLOR = "000000"  # Black
+
+    # Create border style
+    thin_border = Border(
+        left=Side(style="thin", color=BORDER_COLOR),
+        right=Side(style="thin", color=BORDER_COLOR),
+        top=Side(style="thin", color=BORDER_COLOR),
+        bottom=Side(style="thin", color=BORDER_COLOR),
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+
+    ws.title = "Study Table"
+
+    # Write header row
+    for col_num, column_name in enumerate(df.columns, 1):
+        cell = ws.cell(row=1, column=col_num, value=column_name)
+        cell.font = Font(bold=True, size=11)
+        cell.alignment = Alignment(wrap_text=True, vertical="top")
+        cell.fill = PatternFill(
+            start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
         )
+        cell.border = thin_border
 
-        if not study_table.rows:
-            raise ValueError("No rows found in data")
+    # Write data rows
+    for row_num, row_data in enumerate(study_table.rows, 2):
+        # Check if this is a single-cell row (only first cell has content)
+        non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
+        is_section_header = non_empty_cells == 1
 
-        df = pd.DataFrame(study_table.rows)
-
-        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
-
-        await update_job_progress(job_id, stage_name, 0.6, "Writing Excel file")
-
-        # Style constants - modify these to change colors
-        HEADER_BG_COLOR = "D3D3D3"  # Light grey
-        CELL_BG_COLOR = "ADD8E6"  # Baby blue
-        SECTION_HEADER_BG_COLOR = "6CB4E8"  # Darker blue for single-cell rows
-        BORDER_COLOR = "000000"  # Black
-
-        # Create border style
-        thin_border = Border(
-            left=Side(style="thin", color=BORDER_COLOR),
-            right=Side(style="thin", color=BORDER_COLOR),
-            top=Side(style="thin", color=BORDER_COLOR),
-            bottom=Side(style="thin", color=BORDER_COLOR),
-        )
-
-        wb = Workbook()
-        ws = wb.active
-        assert ws is not None
-
-        ws.title = "Study Table"
-
-        # Write header row
         for col_num, column_name in enumerate(df.columns, 1):
-            cell = ws.cell(row=1, column=col_num, value=column_name)
-            cell.font = Font(bold=True, size=11)
+            cell_value = row_data.get(column_name, "")
+            rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
+            cell = ws.cell(row=row_num, column=col_num)
+            # Only set value if cell is not a merged cell
+            cell.value = rich_text_value  # pyright: ignore[reportAttributeAccessIssue]
             cell.alignment = Alignment(wrap_text=True, vertical="top")
-            cell.fill = PatternFill(
-                start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
-            )
             cell.border = thin_border
 
-        # Write data rows
-        for row_num, row_data in enumerate(study_table.rows, 2):
-            # Check if this is a single-cell row (only first cell has content)
-            non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
-            is_section_header = non_empty_cells == 1
+            # Apply background color and font styling
+            if is_section_header:
+                cell.fill = PatternFill(
+                    start_color=SECTION_HEADER_BG_COLOR,
+                    end_color=SECTION_HEADER_BG_COLOR,
+                    fill_type="solid",
+                )
+                if cell_value:  # Only make bold if there's content
+                    cell.font = Font(bold=True, size=11)
+            else:
+                cell.fill = PatternFill(
+                    start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
+                )
 
-            for col_num, column_name in enumerate(df.columns, 1):
-                cell_value = row_data.get(column_name, "")
-                rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
-                cell = ws.cell(row=row_num, column=col_num)
-                # Only set value if cell is not a merged cell
-                cell.value = rich_text_value  # pyright: ignore[reportAttributeAccessIssue]
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
-                cell.border = thin_border
+    # Auto-adjust column widths
+    for col_num in range(1, len(df.columns) + 1):
+        column_letter = get_column_letter(col_num)
+        max_length = 0
+        for cell in ws[column_letter]:
+            try:
+                if cell.value:
+                    cell_length = min(len(str(cell.value)), 100)
+                    max_length = max(max_length, cell_length)
+            except Exception:
+                pass
+        adjusted_width = min(max_length + 2, 80)
+        ws.column_dimensions[column_letter].width = adjusted_width
 
-                # Apply background color and font styling
-                if is_section_header:
-                    cell.fill = PatternFill(
-                        start_color=SECTION_HEADER_BG_COLOR,
-                        end_color=SECTION_HEADER_BG_COLOR,
-                        fill_type="solid",
-                    )
-                    if cell_value:  # Only make bold if there's content
-                        cell.font = Font(bold=True, size=11)
-                else:
-                    cell.fill = PatternFill(
-                        start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
-                    )
+    await asyncio.to_thread(wb.save, output_filename)
 
-        # Auto-adjust column widths
-        for col_num in range(1, len(df.columns) + 1):
-            column_letter = get_column_letter(col_num)
-            max_length = 0
-            for cell in ws[column_letter]:
-                try:
-                    if cell.value:
-                        cell_length = min(len(str(cell.value)), 100)
-                        max_length = max(max_length, cell_length)
-                except Exception:
-                    pass
-            adjusted_width = min(max_length + 2, 80)
-            ws.column_dimensions[column_letter].width = adjusted_width
+    ctx.outputs["xlsx_path"] = output_filename
 
-        await asyncio.to_thread(wb.save, output_filename)
+    # Create artifact immediately
+    from core.models import ArtifactType
 
-        ctx.outputs["xlsx_path"] = output_filename
+    await create_artifact(job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id)
 
-        # Create artifact immediately
-        from core.models import ArtifactType
-
-        await create_artifact(
-            job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id
-        )
-
-        await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
+    await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
 
     return ctx.to_dict()
 
