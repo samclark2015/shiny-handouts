@@ -117,11 +117,15 @@ mock_learning_objectives = [
 
 def main():
     # Set up Jinja2 environment
-    template_path = os.path.join(os.path.dirname(__file__), "src", "templates", "pdf")
+    template_path = os.path.join(os.path.dirname(__file__), "..", "src", "templates", "pdf")
     env = Environment(
-        loader=FileSystemLoader(template_path), autoescape=select_autoescape()
+        loader=FileSystemLoader(template_path),
+        autoescape=select_autoescape(),
+        auto_reload=True,
+        cache_size=0,
     )
     template = env.get_template("vignette.html")
+    print(template.filename)
 
     # Render the template with mock data
     html = template.render(learning_objectives=mock_learning_objectives)
@@ -150,5 +154,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
     main()

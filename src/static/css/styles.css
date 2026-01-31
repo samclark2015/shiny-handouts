@@ -29,3 +29,7 @@
     cursor: pointer;
     user-select: none;
 }
+
+.hidden {
+    display: none;
+}
