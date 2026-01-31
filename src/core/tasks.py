@@ -8,6 +8,7 @@ Converts the pipeline stages into Taskiq tasks with:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -225,7 +226,7 @@ async def update_job_progress(job_id: int, stage: str, progress: float, message:
         job = await Job.objects.aget(id=job_id)
 
         # Check for cancellation
-        if job.status in (JobStatus.CANCELLING):
+        if job.status == JobStatus.CANCELLING:
             job.status = JobStatus.CANCELLED
             job.completed_at = datetime.now(UTC)
             await job.asave(update_fields=["status", "completed_at"])
@@ -487,14 +488,14 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
     await update_job_progress(job_id, stage_name, 0, "Initializing")
 
-    input_dict = json.loads(input_data)
+    input_dict = cast(dict, json.loads(input_data))
     # Generate source_id based on input type
     if input_type == "panopto":
-        source_id = input_dict.get("delivery_id")
+        source_id = input_dict.get("delivery_id", "")
     elif input_type == "url":
         source_id = input_dict.get("url", "")
     else:  # upload
-        source_id = input_dict.get("path", "")
+        source_id = await _hash_file(input_dict.get("path", ""))
 
     # Load job settings and profile
     job = await Job.objects.select_related("user", "setting_profile").aget(id=job_id)
@@ -561,6 +562,9 @@ async def download_video_task(data: dict) -> dict:
                 await _download_m3u8_stream(job_id, stage_name, video_url, video_path)
             else:
                 await _download_regular_video(job_id, stage_name, video_url, video_path)
+
+            # Hash the downloaded file contents to generate source_id
+            ctx.source_id = await _hash_file(video_path)
 
         ctx.video_path = video_path
 
@@ -1011,6 +1015,27 @@ async def finalize_job_task(data: dict) -> dict:
 
 
 # Helper functions for video download
+
+
+async def _hash_file(file_path: str) -> str:
+    """Generate SHA256 hash of file contents.
+
+    Args:
+        file_path: Path to the file to hash
+
+    Returns:
+        Hexadecimal hash string
+    """
+
+    def _hash_sync():
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            # Read file in chunks to handle large files
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+    return await asyncio.to_thread(_hash_sync)
 
 
 def _is_m3u8_url(url: str) -> bool:
