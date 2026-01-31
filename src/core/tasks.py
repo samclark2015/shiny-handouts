@@ -44,6 +44,7 @@ from xhtml2pdf import pisa
 from pipeline.ai import (
     clean_transcript,
     generate_captions,
+    generate_mindmap,
     generate_spreadsheet_helper,
     generate_title,
     generate_vignette_questions,
@@ -88,6 +89,7 @@ os.makedirs(FRAMES_DIR, exist_ok=True)
 
 
 # Pipeline stage weights (must sum to 1.0)
+# Note: generate_artifacts is a parallel stage that includes spreadsheet, vignette, and mindmap
 STAGE_WEIGHTS = {
     "generate_context": 0.02,  # 2%
     "download_video": 0.15,  # 15%
@@ -96,8 +98,7 @@ STAGE_WEIGHTS = {
     "transform_slides_with_ai": 0.15,  # 15%
     "generate_output": 0.10,  # 10%
     "compress_pdf": 0.08,  # 8%
-    "generate_spreadsheet": 0.10,  # 10%
-    "generate_vignette_pdf": 0.08,  # 8%
+    "generate_artifacts": 0.18,  # 18% (parallel: spreadsheet + vignette + mindmap)
     "finalize_job": 0.02,  # 2%
 }
 
@@ -161,11 +162,13 @@ class TaskContext:
     # Per-job settings
     enable_excel: bool = True
     enable_vignette: bool = True
+    enable_mindmap: bool = True
 
     # User settings (custom prompts)
     vignette_prompt: str | None = None
     spreadsheet_prompt: str | None = None
     spreadsheet_columns: list[dict] | None = None
+    mindmap_prompt: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -502,16 +505,19 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
     job = await Job.objects.select_related("user", "setting_profile").aget(id=job_id)
     enable_excel = job.enable_excel
     enable_vignette = job.enable_vignette
+    enable_mindmap = job.enable_mindmap
 
     # Load settings from profile (if set)
     vignette_prompt = None
     spreadsheet_prompt = None
     spreadsheet_columns = None
+    mindmap_prompt = None
 
     if job.setting_profile:
         vignette_prompt = job.setting_profile.get_vignette_prompt()
         spreadsheet_prompt = job.setting_profile.get_spreadsheet_prompt()
         spreadsheet_columns = job.setting_profile.get_spreadsheet_columns()
+        mindmap_prompt = job.setting_profile.get_mindmap_prompt()
 
     ctx = TaskContext(
         job_id=job_id,
@@ -521,9 +527,11 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
         use_ai=True,
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
+        enable_mindmap=enable_mindmap,
         vignette_prompt=vignette_prompt,
         spreadsheet_prompt=spreadsheet_prompt,
         spreadsheet_columns=spreadsheet_columns,
+        mindmap_prompt=mindmap_prompt,
     )
 
     await update_job_progress(job_id, stage_name, 1.0, "Context created")
@@ -1020,6 +1028,356 @@ async def finalize_job_task(data: dict) -> dict:
     return {"job_id": job_id, "status": "completed", "outputs": outputs}
 
 
+async def _render_mermaid_to_png(mermaid_code: str, output_path: str) -> None:
+    """Render Mermaid diagram code to a PNG image using mermaid-cli.
+
+    Args:
+        mermaid_code: The Mermaid diagram code
+        output_path: Path where the PNG file will be saved
+    """
+    with TemporaryDirectory() as temp_dir:
+        mmd_file = os.path.join(temp_dir, "diagram.mmd")
+        with open(mmd_file, "w") as f:
+            f.write(mermaid_code)
+
+        result = await asyncio.to_thread(
+            subprocess.run,
+            [
+                "mmdc",
+                "-i",
+                mmd_file,
+                "-o",
+                output_path,
+                "-b",
+                "white",
+                "-s",
+                "2",  # Scale factor for higher quality
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode != 0:
+            raise ValueError(f"Mermaid CLI failed: {result.stderr}")
+
+
+@broker.task
+async def generate_spreadsheet_artifact_task(data: dict) -> dict:
+    """Generate Excel spreadsheet artifact as a distributed task.
+
+    Returns dict with xlsx_path if successful, empty dict if skipped/failed.
+    """
+    ctx = TaskContext.from_dict(data)
+    job_id = ctx.job_id
+
+    if not ctx.enable_excel:
+        return {}
+
+    if ctx.outputs is None:
+        return {}
+
+    pdf_path = ctx.outputs.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        return {}
+
+    try:
+        study_table = await generate_spreadsheet_helper(
+            pdf_path,
+            custom_prompt=ctx.spreadsheet_prompt,
+            custom_columns=ctx.spreadsheet_columns,
+        )
+
+        if not study_table.rows:
+            return {}
+
+        df = pd.DataFrame(study_table.rows)
+
+        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
+
+        # Style constants
+        HEADER_BG_COLOR = "D3D3D3"
+        CELL_BG_COLOR = "ADD8E6"
+        SECTION_HEADER_BG_COLOR = "6CB4E8"
+        BORDER_COLOR = "000000"
+
+        thin_border = Border(
+            left=Side(style="thin", color=BORDER_COLOR),
+            right=Side(style="thin", color=BORDER_COLOR),
+            top=Side(style="thin", color=BORDER_COLOR),
+            bottom=Side(style="thin", color=BORDER_COLOR),
+        )
+
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+
+        ws.title = "Study Table"
+
+        # Write header row
+        for col_num, column_name in enumerate(df.columns, 1):
+            cell = ws.cell(row=1, column=col_num, value=column_name)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(
+                start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
+            )
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = thin_border
+
+        # Write data rows
+        for row_num, row_data in enumerate(study_table.rows, 2):
+            first_cell_value = list(row_data.values())[0] if row_data else ""
+            is_section_header = all(
+                v == "" or v == first_cell_value for v in list(row_data.values())
+            )
+
+            for col_num, column_name in enumerate(df.columns, 1):
+                cell_value = row_data.get(column_name, "")
+
+                if is_section_header and col_num == 1:
+                    cell = ws.cell(row=row_num, column=col_num, value=first_cell_value)
+                    cell.font = Font(bold=True)
+                    cell.fill = PatternFill(
+                        start_color=SECTION_HEADER_BG_COLOR,
+                        end_color=SECTION_HEADER_BG_COLOR,
+                        fill_type="solid",
+                    )
+                    ws.merge_cells(
+                        start_row=row_num,
+                        start_column=1,
+                        end_row=row_num,
+                        end_column=len(df.columns),
+                    )
+                    for merged_col in range(1, len(df.columns) + 1):
+                        merged_cell = ws.cell(row=row_num, column=merged_col)
+                        merged_cell.border = thin_border
+                    break
+                else:
+                    rich_text = parse_markdown_bold_to_rich_text(str(cell_value))
+                    cell = ws.cell(row=row_num, column=col_num)
+                    cell.value = rich_text
+                    cell.fill = PatternFill(
+                        start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
+                    )
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+                    cell.border = thin_border
+
+        # Auto-adjust column widths
+        for col_num in range(1, len(df.columns) + 1):
+            column_letter = get_column_letter(col_num)
+            max_length = 0
+            for row in ws.iter_rows(min_col=col_num, max_col=col_num):
+                for cell in row:
+                    try:
+                        cell_length = len(str(cell.value)) if cell.value else 0
+                        max_length = max(max_length, cell_length)
+                    except Exception:
+                        pass
+            adjusted_width = min(max_length + 2, 50)
+            ws.column_dimensions[column_letter].width = adjusted_width
+
+        await asyncio.to_thread(wb.save, output_filename)
+
+        # Create artifact
+        from core.models import ArtifactType
+
+        await create_artifact(
+            job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id
+        )
+
+        return {"xlsx_path": output_filename}
+    except Exception as e:
+        logging.exception(f"Failed to generate spreadsheet: {e}")
+        return {}
+
+
+@broker.task
+async def generate_vignette_artifact_task(data: dict) -> dict:
+    """Generate vignette PDF artifact as a distributed task.
+
+    Returns dict with vignette_path if successful, empty dict if skipped/failed.
+    """
+    ctx = TaskContext.from_dict(data)
+    job_id = ctx.job_id
+
+    if not ctx.enable_vignette:
+        return {}
+
+    if ctx.outputs is None:
+        return {}
+
+    pdf_path = ctx.outputs.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        return {}
+
+    try:
+        vignette_data = await generate_vignette_questions(
+            pdf_path,
+            custom_prompt=ctx.vignette_prompt,
+        )
+
+        if not vignette_data.learning_objectives:
+            return {}
+
+        learning_objectives = [lo.model_dump() for lo in vignette_data.learning_objectives]
+
+        template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
+        env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
+        template = env.get_template("vignette.html")
+        html = template.render(learning_objectives=learning_objectives)
+
+        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        vignette_pdf_path = os.path.join(OUT_DIR, f"{base_name} - Vignette Questions.pdf")
+
+        with open(vignette_pdf_path, "wb") as f:
+            pisa_status = pisa.CreatePDF(html, dest=f)
+            if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+                return {}
+
+        # Create artifact
+        from core.models import ArtifactType
+
+        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, vignette_pdf_path, ctx.source_id)
+
+        return {"vignette_path": vignette_pdf_path}
+    except Exception as e:
+        logging.exception(f"Failed to generate vignette: {e}")
+        return {}
+
+
+@broker.task
+async def generate_mindmap_artifact_task(data: dict) -> dict:
+    """Generate mindmap PNG artifact as a distributed task.
+
+    Returns dict with mindmap_path if successful, empty dict if skipped/failed.
+    """
+    ctx = TaskContext.from_dict(data)
+    job_id = ctx.job_id
+
+    if not ctx.enable_mindmap:
+        return {}
+
+    if ctx.outputs is None:
+        return {}
+
+    pdf_path = ctx.outputs.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        return {}
+
+    try:
+        mermaid_code = await generate_mindmap(
+            pdf_path,
+            custom_prompt=ctx.mindmap_prompt,
+        )
+
+        if not mermaid_code:
+            return {}
+
+        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        mindmap_path = os.path.join(OUT_DIR, f"{base_name} - Mindmap.png")
+
+        await _render_mermaid_to_png(mermaid_code, mindmap_path)
+
+        # Create artifact
+        from core.models import ArtifactType
+
+        await create_artifact(job_id, ArtifactType.PNG_MINDMAP, mindmap_path, ctx.source_id)
+
+        return {"mindmap_path": mindmap_path}
+    except Exception as e:
+        logging.exception(f"Failed to generate mindmap: {e}")
+        return {}
+
+
+@broker.task
+async def generate_artifacts_task(data: dict) -> dict:
+    """Generate all artifacts (spreadsheet, vignette, mindmap) in parallel using distributed tasks."""
+    ctx = TaskContext.from_dict(data)
+    job_id = ctx.job_id
+    stage_name = "generate_artifacts"
+
+    await update_job_progress(job_id, stage_name, 0, "Generating artifacts")
+
+    if ctx.outputs is None:
+        ctx.outputs = {}
+
+    pdf_path = ctx.outputs.get("pdf_path")
+    if not pdf_path or not os.path.exists(pdf_path):
+        return ctx.to_dict()
+
+    # Queue all tasks with their names for progress reporting
+    tasks_with_names = [
+        (await generate_spreadsheet_artifact_task.kiq(data), "Spreadsheet"),
+        (await generate_vignette_artifact_task.kiq(data), "Vignette"),
+        (await generate_mindmap_artifact_task.kiq(data), "Mindmap"),
+    ]
+
+    await update_job_progress(job_id, stage_name, 0.1, "Waiting for artifact tasks")
+
+    # Wait for results as they complete and report progress
+    completed_count = 0
+    total_tasks = len(tasks_with_names)
+
+    # Create futures for each task's wait_result
+    async def wait_and_identify(task_handle, name: str):
+        result = await task_handle.wait_result()
+        return (result, name)
+
+    pending = [
+        asyncio.create_task(wait_and_identify(task, name))
+        for task, name in tasks_with_names
+    ]
+
+    while pending:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+
+        for completed_task in done:
+            try:
+                result, task_name = await completed_task
+                completed_count += 1
+
+                # Calculate progress (0.1 to 0.9 range for artifact generation)
+                progress = 0.1 + (completed_count / total_tasks) * 0.8
+
+                # Check if task succeeded
+                if result is not None and not result.is_err:
+                    return_value = getattr(result, "return_value", None)
+                    if isinstance(return_value, dict) and return_value:
+                        ctx.outputs.update(return_value)
+                        await update_job_progress(
+                            job_id, stage_name, progress,
+                            f"{task_name} completed ({completed_count}/{total_tasks})"
+                        )
+                    else:
+                        await update_job_progress(
+                            job_id, stage_name, progress,
+                            f"{task_name} skipped ({completed_count}/{total_tasks})"
+                        )
+                else:
+                    await update_job_progress(
+                        job_id, stage_name, progress,
+                        f"{task_name} failed ({completed_count}/{total_tasks})"
+                    )
+                    if result is not None and result.is_err:
+                        logging.error(f"{task_name} artifact generation failed: {result.error}")
+
+            except Exception as e:
+                completed_count += 1
+                progress = 0.1 + (completed_count / total_tasks) * 0.8
+                logging.exception(f"Artifact task failed: {e}")
+                await update_job_progress(
+                    job_id, stage_name, progress,
+                    f"Task failed ({completed_count}/{total_tasks})"
+                )
+
+        # Convert remaining pending set back to list for next iteration
+        pending = set(pending)
+
+    await update_job_progress(job_id, stage_name, 1.0, "Artifacts generated")
+
+    return ctx.to_dict()
+
+
 # Helper functions for video download
 
 
@@ -1203,8 +1561,7 @@ def create_pipeline(job_id: int, input_type: str, input_data: str) -> Pipeline:
         .call_next(transform_slides_ai_task)
         .call_next(generate_output_task)
         .call_next(compress_pdf_task)
-        .call_next(generate_spreadsheet_task)
-        .call_next(generate_vignette_task)
+        .call_next(generate_artifacts_task)
         .call_next(finalize_job_task)
     )
 

@@ -132,6 +132,11 @@ class SettingProfile(models.Model):
         null=True,
         help_text="Custom prompt for generating Excel study table. Leave blank to use default.",
     )
+    mindmap_prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom prompt for generating mindmap diagram. Leave blank to use default.",
+    )
 
     # Excel column configuration (stored as JSON)
     spreadsheet_columns = models.JSONField(
@@ -174,6 +179,10 @@ class SettingProfile(models.Model):
     def get_spreadsheet_prompt(self) -> str | None:
         """Get the spreadsheet prompt, or None if using default."""
         return self.spreadsheet_prompt if self.spreadsheet_prompt else None
+
+    def get_mindmap_prompt(self) -> str | None:
+        """Get the mindmap prompt, or None if using default."""
+        return self.mindmap_prompt if self.mindmap_prompt else None
 
     def get_spreadsheet_columns(self) -> list[dict]:
         """Get the spreadsheet columns configuration."""

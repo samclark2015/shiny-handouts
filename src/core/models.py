@@ -29,6 +29,7 @@ class ArtifactType(models.TextChoices):
     PDF_HANDOUT = "pdf_handout", "PDF Handout"
     EXCEL_STUDY_TABLE = "excel_study_table", "Excel Study Table"
     PDF_VIGNETTE = "pdf_vignette", "PDF Vignette"
+    PNG_MINDMAP = "png_mindmap", "PNG Mindmap"
 
 
 class Job(models.Model):
@@ -64,6 +65,10 @@ class Job(models.Model):
     enable_vignette = models.BooleanField(
         default=True,
         help_text="Generate vignette quiz questions for this job",
+    )
+    enable_mindmap = models.BooleanField(
+        default=True,
+        help_text="Generate mindmap diagram for this job",
     )
 
     # Setting profile reference (optional)

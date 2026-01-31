@@ -12,7 +12,7 @@ from openai import AsyncOpenAI
 from pydub import AudioSegment
 
 from .helpers import Caption, read_prompt
-from .schemas import StudyTable, VignetteQuestions
+from .schemas import MindmapResponse, StudyTable, VignetteQuestions
 
 # Import AI caching functions
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -260,3 +260,48 @@ async def generate_vignette_questions(
         raise ValueError("No output received from LLM")
     value = VignetteQuestions.model_validate_json(value)
     return value
+
+
+@ai_checkpoint
+async def generate_mindmap(
+    filename: str,
+    custom_prompt: str | None = None,
+) -> str:
+    """Generate a Mermaid mindmap diagram from a PDF file.
+
+    Args:
+        filename: Path to the PDF file.
+        custom_prompt: Optional custom prompt to use instead of default.
+
+    Returns:
+        Mermaid mindmap code as a string.
+    """
+    prompt = custom_prompt or read_prompt("generate_mindmap")
+
+    # Read and encode the PDF
+    with open(filename, "rb") as pdf_file:
+        pdf_data = base64.b64encode(pdf_file.read()).decode("utf-8")
+
+    response = await client.responses.parse(
+        model=SMART_MODEL,
+        input=[
+            {"role": "system", "content": prompt},
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_file",
+                        "filename": filename,
+                        "file_data": f"data:application/pdf;base64,{pdf_data}",
+                    }
+                ],
+            },
+        ],
+        text_format=MindmapResponse,
+    )
+
+    value = response.output_text
+    if not value:
+        raise ValueError("No output received from LLM")
+    parsed = MindmapResponse.model_validate_json(value)
+    return parsed.mermaid_code

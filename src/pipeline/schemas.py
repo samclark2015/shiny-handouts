@@ -50,3 +50,11 @@ class VignetteQuestions(BaseModel):
     learning_objectives: list[LearningObjective] = Field(
         description="Array of learning objectives with their associated vignette questions"
     )
+
+
+class MindmapResponse(BaseModel):
+    """Response containing a Mermaid mindmap diagram."""
+
+    mermaid_code: str = Field(
+        description="Valid Mermaid mindmap syntax starting with 'mindmap'"
+    )
