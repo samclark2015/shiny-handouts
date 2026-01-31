@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from tempfile import TemporaryDirectory
 
+from django.conf import settings
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
@@ -31,7 +32,7 @@ async def generate_output_task(data: dict) -> dict:
     # Convert slide dicts back to Slide namedtuples for template
     slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
-    template_path = os.path.join(os.path.dirname(__file__), "..", "..", "templates", "pdf")
+    template_path = settings.BASE_DIR / "templates" / "pdf"
     env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("template.html")
     html = template.render(pairs=slides)

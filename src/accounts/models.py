@@ -5,8 +5,8 @@ Custom user model with OAuth integration for Authentik.
 """
 
 import json
-import os
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -14,9 +14,7 @@ from django.utils import timezone
 
 def load_default_spreadsheet_columns():
     """Load default spreadsheet columns from JSON file."""
-    json_path = os.path.join(
-        os.path.dirname(__file__), "..", "prompts", "default_spreadsheet_columns.json"
-    )
+    json_path = settings.BASE_DIR / "prompts" / "default_spreadsheet_columns.json"
     try:
         with open(json_path) as f:
             return json.load(f)

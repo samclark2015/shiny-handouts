@@ -2,21 +2,19 @@ import base64
 import json
 import logging
 import os
-import sys
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
 from typing import cast
 
+from django.conf import settings
 from openai import AsyncOpenAI
 from pydub import AudioSegment
 
+from core.cache import get_ai_cached_result, set_ai_cached_result
+
 from .helpers import Caption, read_prompt
 from .schemas import MindmapResponse, StudyTable, VignetteQuestions
-
-# Import AI caching functions
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from core.cache import get_ai_cached_result, set_ai_cached_result
 
 FAST_MODEL = "gpt-4.1-nano"
 SMART_MODEL = "gpt-5-mini"
@@ -143,7 +141,8 @@ async def generate_title(html: str) -> str:
 def _build_column_schema(columns: list[dict] | None) -> dict:
     """Build the column configuration section for the spreadsheet prompt."""
     if not columns:
-        with open("src/prompts/default_spreadsheet_columns.json") as f:
+        default_columns_path = settings.BASE_DIR / "prompts" / "default_spreadsheet_columns.json"
+        with open(default_columns_path) as f:
             columns = json.load(f)
 
     columns = cast(list[dict], columns)

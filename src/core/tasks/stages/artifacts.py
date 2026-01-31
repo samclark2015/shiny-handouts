@@ -7,6 +7,7 @@ import logging
 import os
 
 import pandas as pd
+from django.conf import settings
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -181,7 +182,7 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
 
         learning_objectives = [lo.model_dump() for lo in vignette_data.learning_objectives]
 
-        template_path = os.path.join(os.path.dirname(__file__), "..", "..", "templates", "pdf")
+        template_path = settings.BASE_DIR / "templates" / "pdf"
         env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
         template = env.get_template("vignette.html")
         html = template.render(learning_objectives=learning_objectives)

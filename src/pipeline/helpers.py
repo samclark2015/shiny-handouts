@@ -1,8 +1,8 @@
 import re
 from collections import namedtuple
-from pathlib import Path
 
 import requests
+from django.conf import settings
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
 
@@ -10,8 +10,8 @@ Caption = namedtuple("Caption", ("text", "timestamp"))
 Slide = namedtuple("Slide", ("image", "caption", "extra"))
 Progress = namedtuple("Progress", ("stage", "complete", "total"))
 
-# Prompts directory - now relative to src
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+# Prompts directory - using Django's BASE_DIR for robust path handling
+PROMPTS_DIR = settings.BASE_DIR / "prompts"
 
 
 def read_prompt(name: str) -> str:

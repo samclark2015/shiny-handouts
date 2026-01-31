@@ -20,7 +20,9 @@ import time
 from pathlib import Path
 
 # Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+SCRIPT_DIR = Path(__file__).resolve().parent
+SRC_DIR = SCRIPT_DIR.parent / "src"
+sys.path.insert(0, str(SRC_DIR))
 
 import cv2
 
