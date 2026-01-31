@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}Job #{{ job.id }} - Admin - Handout Generator{% endblock %}
+{% block title %}Job #{{ job.pk }} - Admin - Handout Generator{% endblock %}
 
 {% block body %}
 <!-- Admin Header -->
@@ -42,7 +42,7 @@
         <nav class="mb-4">
             <a href="{% url 'admin:jobs' %}" class="text-blue-600 hover:text-blue-800">Jobs</a>
             <span class="text-gray-500 mx-2">/</span>
-            <span class="text-gray-700">Job #{{ job.id }}</span>
+            <span class="text-gray-700">Job #{{ job.pk }}</span>
         </nav>
 
         <div class="bg-white rounded-lg shadow">
@@ -50,7 +50,7 @@
                 <h2 class="text-xl font-semibold text-gray-900">Job Details</h2>
                 <div class="space-x-2">
                     {% if job.status == 'pending' or job.status == 'running' %}
-                    <form method="post" action="{% url 'admin:cancel_job' job.id %}" class="inline">
+                    <form method="post" action="{% url 'admin:cancel_job' job.pk %}" class="inline">
                         {% csrf_token %}
                         <button type="submit" 
                                 class="px-4 py-2 text-sm font-medium rounded-md bg-yellow-600 hover:bg-yellow-700 text-white transition-colors">
@@ -58,7 +58,7 @@
                         </button>
                     </form>
                     {% endif %}
-                    <form method="post" action="{% url 'admin:delete_job' job.id %}" class="inline"
+                    <form method="post" action="{% url 'admin:delete_job' job.pk %}" class="inline"
                           onsubmit="return confirm('Are you sure you want to delete this job?');">
                         {% csrf_token %}
                         <button type="submit" 
@@ -72,7 +72,7 @@
             <div class="px-6 py-4 grid grid-cols-2 gap-4">
                 <div>
                     <p class="text-sm text-gray-500">ID</p>
-                    <p class="font-medium">{{ job.id }}</p>
+                    <p class="font-medium">{{ job.pk }}</p>
                 </div>
                 <div>
                     <p class="text-sm text-gray-500">Task ID</p>

@@ -1,11 +1,11 @@
 {# Job card partial for HTMX updates #}
 {# Set animate=true when rendering new job cards to get fade-in effect #}
-<div id="job-{{ job.id }}" 
+<div id="job-{{ job.pk }}" 
      class="border rounded-lg p-4 {% if animate %}fade-in {% endif %}{% if job.status == 'completed' %}border-green-200 bg-green-50{% elif job.status == 'failed' %}border-red-200 bg-red-50{% elif job.status == 'cancelled' %}border-gray-200 bg-gray-50{% elif job.status == 'cancelling' %}border-yellow-200 bg-yellow-50{% else %}border-blue-200 bg-blue-50{% endif %}"
      {% if job.status in 'pending,running,cancelling' %}
-     hx-get="{% url 'api:get_job' job.id %}"
+     hx-get="{% url 'api:get_job' job.pk %}"
      hx-trigger="every 2s"
-     hx-swap="outerHTML"
+     hx-swap="outerHTML swap:0ms"
      {% elif job.status in 'completed,failed,cancelled' %}
      hx-get="{% url 'api:get_jobs' %}"
      hx-trigger="load delay:100ms"
@@ -18,23 +18,23 @@
             {# Status icon #}
             {% if job.status == 'completed' %}
                 <span class="text-green-600">
-                    <i class="fa-solid fa-circle-check w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-circle-check text-lg"></i>
                 </span>
             {% elif job.status == 'failed' %}
                 <span class="text-red-600">
-                    <i class="fa-solid fa-circle-xmark w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-circle-xmark text-lg"></i>
                 </span>
             {% elif job.status == 'cancelled' %}
                 <span class="text-gray-600">
-                    <i class="fa-solid fa-circle-stop w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-circle-stop text-lg"></i>
                 </span>
             {% elif job.status == 'cancelling' %}
                 <span class="text-yellow-600">
-                    <i class="fa-solid fa-spinner fa-spin w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-spinner fa-spin text-lg"></i>
                 </span>
             {% else %}
                 <span class="text-blue-600">
-                    <i class="fa-solid fa-spinner fa-spin w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-spinner fa-spin text-lg"></i>
                 </span>
             {% endif %}
             
@@ -44,23 +44,23 @@
         <div class="flex items-center space-x-2">
             {# Cancel button for active jobs (not for cancelling jobs) #}
             {% if job.status == 'pending' or job.status == 'running' %}
-                <button hx-delete="{% url 'api:cancel_job' job.id %}"
-                        hx-target="#job-{{ job.id }}"
+                <button hx-delete="{% url 'api:cancel_job' job.pk %}"
+                        hx-target="#job-{{ job.pk }}"
                         hx-swap="outerHTML"
                         class="text-red-600 hover:text-red-800 p-1"
                         title="Cancel">
-                    <i class="fa-solid fa-xmark w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
             {% endif %}
             
             {# Retry button for failed jobs only (cancelled jobs are deleted) #}
             {% if job.status == 'failed' %}
-                <button hx-post="{% url 'api:retry_job' job.id %}"
-                        hx-target="#job-{{ job.id }}"
+                <button hx-post="{% url 'api:retry_job' job.pk %}"
+                        hx-target="#job-{{ job.pk }}"
                         hx-swap="outerHTML"
                         class="text-blue-600 hover:text-blue-800 p-1"
                         title="Retry">
-                    <i class="fa-solid fa-rotate-right w-5 h-5 text-lg"></i>
+                    <i class="fa-solid fa-rotate-right text-lg"></i>
                 </button>
             {% endif %}
         </div>

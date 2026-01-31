@@ -24,4 +24,9 @@ urlpatterns = [
         api.get_lecture_artifacts,
         name="get_lecture_artifacts",
     ),
+    path(
+        "lectures/<int:lecture_id>/rename",
+        api.rename_lecture,
+        name="rename_lecture",
+    ),
 ]

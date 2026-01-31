@@ -1,14 +1,21 @@
 import base64
 import json
 import os
+import sys
+from functools import wraps
 from io import BytesIO
 from pathlib import Path
+from typing import cast
 
 from openai import AsyncOpenAI
 from pydub import AudioSegment
 
 from .helpers import Caption, read_prompt
 from .schemas import StudyTable, VignetteQuestions
+
+# Import AI caching functions
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from core.cache import get_ai_cached_result, set_ai_cached_result
 
 FAST_MODEL = "gpt-4.1-nano"
 SMART_MODEL = "gpt-5-mini"
@@ -19,6 +26,35 @@ key = os.environ["OPENAI_API_KEY"]
 client = AsyncOpenAI(api_key=key)
 
 
+def ai_checkpoint(func):
+    """
+    Decorator to cache AI function results to save tokens.
+
+    This caches the result based on the function name and arguments,
+    automatically skipping expensive AI calls if the same inputs are provided again.
+    """
+
+    @wraps(func)
+    async def wrapper(*args, **kwargs):
+        func_name = func.__name__
+
+        # Try to get cached result
+        cached = get_ai_cached_result(func_name, *args, **kwargs)
+        if cached is not None:
+            print(f"[AI Checkpoint] Using cached result for {func_name}")
+            return cached
+
+        # Execute the function and cache the result
+        print(f"[AI Checkpoint] Executing {func_name} (no cache hit)")
+        result = await func(*args, **kwargs)
+        set_ai_cached_result(func_name, result, *args, **kwargs)
+
+        return result
+
+    return wrapper
+
+
+@ai_checkpoint
 async def generate_captions(video_path: str) -> list[Caption]:
     video: AudioSegment = AudioSegment.from_file(video_path, format="mp4")
     audio: AudioSegment = video.set_channels(1).set_frame_rate(16000).set_sample_width(2)
@@ -44,6 +80,7 @@ async def generate_captions(video_path: str) -> list[Caption]:
     return captions
 
 
+@ai_checkpoint
 async def clean_transcript(content: str) -> str:
     prompt = read_prompt("clean_transcript")
 
@@ -57,6 +94,7 @@ async def clean_transcript(content: str) -> str:
     return response.output_text
 
 
+@ai_checkpoint
 async def gen_keypoints(content: str, slide_path: str) -> str:
     prompt = read_prompt("gen_keypoints")
 
@@ -88,6 +126,7 @@ async def gen_keypoints(content: str, slide_path: str) -> str:
     return response.output_text
 
 
+@ai_checkpoint
 async def generate_title(html: str) -> str:
     prompt = read_prompt("generate_title")
     full_prompt = f"{prompt}\nHTML:\n\n{html}"
@@ -104,9 +143,10 @@ async def generate_title(html: str) -> str:
 def _build_column_schema(columns: list[dict] | None) -> dict:
     """Build the column configuration section for the spreadsheet prompt."""
     if not columns:
-        with open("prompts/default_spreadsheet_columns.json") as f:
+        with open("src/prompts/default_spreadsheet_columns.json") as f:
             columns = json.load(f)
 
+    columns = cast(list[dict], columns)
     names = [col["name"] for col in columns]
     properties = {
         col["name"]: {"type": "string", "description": col["description"]} for col in columns
@@ -134,6 +174,7 @@ def _build_column_schema(columns: list[dict] | None) -> dict:
     return schema
 
 
+@ai_checkpoint
 async def generate_spreadsheet_helper(
     filename: str,
     custom_prompt: str | None = None,
@@ -154,7 +195,7 @@ async def generate_spreadsheet_helper(
     with open(filename, "rb") as pdf_file:
         pdf_data = base64.b64encode(pdf_file.read()).decode("utf-8")
 
-    response = await client.responses.parse(
+    response = await client.responses.create(
         model=SMART_MODEL,
         input=[
             {"role": "system", "content": prompt},
@@ -172,11 +213,14 @@ async def generate_spreadsheet_helper(
         text={"format": {"type": "json_schema", "name": "SpreadsheetResponse", "schema": schema}},
     )
 
-    value = response.output_parsed
-    assert value is not None
+    value = response.output_text
+    if not value:
+        raise ValueError("No output received from LLM")
+    value = StudyTable.model_validate_json(value)
     return value
 
 
+@ai_checkpoint
 async def generate_vignette_questions(
     filename: str,
     custom_prompt: str | None = None,
@@ -211,6 +255,8 @@ async def generate_vignette_questions(
         text_format=VignetteQuestions,
     )
 
-    value = response.output_parsed
-    assert isinstance(value, VignetteQuestions)
+    value = response.output_text
+    if not value:
+        raise ValueError("No output received from LLM")
+    value = VignetteQuestions.model_validate_json(value)
     return value

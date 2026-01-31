@@ -98,8 +98,8 @@
                 <div>
                     <p class="text-sm text-gray-500">Source Job</p>
                     <p class="font-medium">
-                        <a href="{% url 'admin:job_detail' lecture.job.id %}" class="text-blue-600 hover:text-blue-800">
-                            Job #{{ lecture.job.id }}
+                        <a href="{% url 'admin:job_detail' lecture.job.pk %}" class="text-blue-600 hover:text-blue-800">
+                            Job #{{ lecture.job.pk }}
                         </a>
                     </p>
                 </div>

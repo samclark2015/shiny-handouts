@@ -117,7 +117,7 @@ mock_learning_objectives = [
 
 def main():
     # Set up Jinja2 environment
-    template_path = os.path.join(os.path.dirname(__file__), "templates")
+    template_path = os.path.join(os.path.dirname(__file__), "src", "templates", "pdf")
     env = Environment(
         loader=FileSystemLoader(template_path), autoescape=select_autoescape()
     )

@@ -64,6 +64,7 @@
                     <form hx-post="{% url 'api:upload_file' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
+                          hx-on::after-request="htmx.trigger('body', 'newJob')"
                           hx-encoding="multipart/form-data"
                           class="space-y-4">
                         {% csrf_token %}
@@ -104,6 +105,7 @@
                     <form hx-post="{% url 'api:process_url' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
+                          hx-on::after-request="htmx.trigger('body', 'newJob')"
                           class="space-y-4">
                         {% csrf_token %}
                         
@@ -134,34 +136,30 @@
                     <form hx-post="{% url 'api:process_panopto' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
-                          class="space-y-4">
+                          hx-on::after-request="htmx.trigger('body', 'newJob')"
+                          class="space-y-4"
+                          id="panopto-form">
                         {% csrf_token %}
                         
-                        <div>
-                            <label for="panopto-url" class="block text-sm font-medium text-gray-700 mb-1">Panopto URL</label>
-                            <input type="url" 
-                                   name="url" 
-                                   id="panopto-url"
-                                   placeholder="https://panopto.example.com/Panopto/Pages/Viewer.aspx?id=..."
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                   required>
-                        </div>
+                        <input type="hidden" name="url" id="panopto-url-hidden">
+                        <input type="hidden" name="cookie" id="panopto-cookie-hidden">
                         
-                        <div>
-                            <label for="panopto-cookie" class="block text-sm font-medium text-gray-700 mb-1">Auth Cookie (.ASPXAUTH)</label>
-                            <input type="text" 
-                                   name="cookie" 
-                                   id="panopto-cookie"
-                                   placeholder="Paste your .ASPXAUTH cookie value"
-                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                   required>
-                            <p class="mt-1 text-xs text-gray-500">You can get this from your browser's developer tools</p>
+                        <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+                            <div class="flex items-start">
+                                <i class="fa-solid fa-video text-blue-600 mt-1 mr-3"></i>
+                                <div class="flex-1">
+                                    <h3 class="text-sm font-medium text-blue-900 mb-1">Panopto Lecture Supplied</h3>
+                                    <p class="text-sm text-blue-700" id="panopto-url-display">Loading...</p>
+                                </div>
+                            </div>
                         </div>
                         
                         {% include "partials/output_options.html" %}
                         
                         <button type="submit" 
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
+                                id="panopto-submit-btn"
+                                disabled>
                             <span class="htmx-indicator">
                                 <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
                             </span>
@@ -185,7 +183,7 @@
                 
                 <div id="job-list" 
                      hx-get="{% url 'api:get_jobs' %}"
-                     hx-trigger="every 5s"
+                     hx-trigger="newJob from:body"
                      hx-swap="innerHTML"
                      class="space-y-3">
                     {% for job in jobs %}
@@ -224,23 +222,50 @@
 {% block scripts %}
 <script>
     // Tab switching
+    function switchTab(tabName) {
+        // Update tab buttons
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.remove('border-blue-500', 'text-blue-600');
+            b.classList.add('border-transparent', 'text-gray-500');
+        });
+        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
+        if (activeBtn) {
+            activeBtn.classList.remove('border-transparent', 'text-gray-500');
+            activeBtn.classList.add('border-blue-500', 'text-blue-600');
+        }
+        
+        // Show/hide tab content
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        document.getElementById('tab-' + tabName).classList.remove('hidden');
+    }
+    
     document.querySelectorAll('.tab-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-            // Update tab buttons
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                b.classList.remove('border-blue-500', 'text-blue-600');
-                b.classList.add('border-transparent', 'text-gray-500');
-            });
-            btn.classList.remove('border-transparent', 'text-gray-500');
-            btn.classList.add('border-blue-500', 'text-blue-600');
-            
-            // Show/hide tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.add('hidden');
-            });
-            document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+            switchTab(btn.dataset.tab);
         });
     });
+    
+    // Check for Panopto query parameters
+    const urlParams = new URLSearchParams(window.location.search);
+    const panoptoUrl = urlParams.get('url');
+    const panoptoCookie = urlParams.get('cookie');
+    
+    if (panoptoUrl && panoptoCookie) {
+        // Populate hidden fields
+        document.getElementById('panopto-url-hidden').value = panoptoUrl;
+        document.getElementById('panopto-cookie-hidden').value = panoptoCookie;
+        
+        // Display the URL
+        document.getElementById('panopto-url-display').textContent = panoptoUrl;
+        
+        // Enable submit button
+        document.getElementById('panopto-submit-btn').disabled = false;
+        
+        // Switch to Panopto tab
+        switchTab('panopto');
+    }
     
     // File upload handling
     const fileInput = document.getElementById('file-upload');

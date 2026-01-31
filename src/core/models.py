@@ -78,10 +78,10 @@ class Job(models.Model):
         verbose_name_plural = "jobs"
 
     def __str__(self):
-        return f"Job {self.id} - {self.label} ({self.status})"
+        return f"Job {self.pk} - {self.label} ({self.status})"
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Calculate job duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()

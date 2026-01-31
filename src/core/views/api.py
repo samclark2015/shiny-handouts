@@ -55,8 +55,8 @@ def upload_file(request):
 
     # Start the pipeline asynchronously
     from core.tasks import start_pipeline
-    
-    task_id = asyncio.run(start_pipeline(job.id, "upload", job.input_data))
+
+    task_id = asyncio.run(start_pipeline(job.pk, "upload", job.input_data))
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -92,8 +92,8 @@ def process_url(request):
 
     # Start the pipeline
     from core.tasks import start_pipeline
-    
-    task_id = asyncio.run(start_pipeline(job.id, "url", job.input_data))
+
+    task_id = asyncio.run(start_pipeline(job.pk, "url", job.input_data))
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -146,8 +146,8 @@ def process_panopto(request):
 
     # Start the pipeline
     from core.tasks import start_pipeline
-    
-    task_id = asyncio.run(start_pipeline(job.id, "panopto", job.input_data))
+
+    task_id = asyncio.run(start_pipeline(job.pk, "panopto", job.input_data))
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -215,8 +215,8 @@ def retry_job(request, job_id: int):
 
         # Start new pipeline
         from core.tasks import start_pipeline
-        
-        task_id = asyncio.run(start_pipeline(job.id, job.input_type, job.input_data))
+
+        task_id = asyncio.run(start_pipeline(job.pk, job.input_type, job.input_data))
         job.taskiq_task_id = task_id
         job.save(update_fields=["taskiq_task_id"])
 
@@ -260,6 +260,22 @@ def get_lecture_artifacts(request, lecture_id: int):
     return render(request, "partials/artifact_list.html", {"lecture": lecture})
 
 
+@require_POST
+@login_required
+def rename_lecture(request, lecture_id: int):
+    """Rename a lecture."""
+    lecture = get_object_or_404(Lecture, id=lecture_id, user=request.user)
+    new_title = request.POST.get("title", "").strip()
+
+    if not new_title:
+        return HttpResponse("Title cannot be empty", status=400)
+
+    lecture.title = new_title
+    lecture.save(update_fields=["title"])
+
+    return render(request, "partials/lecture_title.html", {"lecture": lecture})
+
+
 @require_GET
 @login_required
 def job_progress(request, job_id: int):
@@ -277,7 +293,7 @@ def job_progress(request, job_id: int):
         try:
             # Send initial state
             initial_data = {
-                "id": job.id,
+                "id": job.pk,
                 "status": job.status,
                 "progress": int(job.progress * 100),
                 "stage": job.current_stage or "",

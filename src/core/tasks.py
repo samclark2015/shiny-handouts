@@ -15,9 +15,8 @@ import subprocess
 import tempfile
 import urllib.request
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from tempfile import TemporaryDirectory
-from typing import Optional
 from urllib.parse import urljoin
 from uuid import uuid4
 
@@ -26,7 +25,6 @@ import m3u8
 import pandas as pd
 import redis.asyncio as aioredis
 import skimage as ski
-from django.conf import settings
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -83,6 +81,46 @@ os.makedirs(OUT_DIR, exist_ok=True)
 os.makedirs(FRAMES_DIR, exist_ok=True)
 
 
+# Pipeline stage weights (must sum to 1.0)
+STAGE_WEIGHTS = {
+    "generate_context": 0.02,  # 2%
+    "download_video": 0.15,  # 15%
+    "extract_captions": 0.15,  # 15%
+    "match_frames": 0.15,  # 15%
+    "transform_slides_ai": 0.15,  # 15%
+    "generate_output": 0.10,  # 10%
+    "compress_pdf": 0.08,  # 8%
+    "generate_spreadsheet": 0.10,  # 10%
+    "generate_vignette": 0.08,  # 8%
+    "finalize_job": 0.02,  # 2%
+}
+
+# Calculate cumulative stage start positions
+STAGE_START_PROGRESS = {}
+_cumulative = 0.0
+for stage, weight in STAGE_WEIGHTS.items():
+    STAGE_START_PROGRESS[stage] = _cumulative
+    _cumulative += weight
+
+
+def calculate_overall_progress(stage_name: str, stage_progress: float) -> float:
+    """Calculate overall pipeline progress from stage name and stage-specific progress.
+
+    Args:
+        stage_name: Name of the current stage (e.g., 'download_video')
+        stage_progress: Progress within this stage (0.0 to 1.0)
+
+    Returns:
+        Overall progress from 0.0 to 1.0
+    """
+    if stage_name not in STAGE_WEIGHTS:
+        return 0.0
+
+    start = STAGE_START_PROGRESS[stage_name]
+    weight = STAGE_WEIGHTS[stage_name]
+    return start + (stage_progress * weight)
+
+
 class JobCancelledException(Exception):
     """Raised when a job has been cancelled."""
 
@@ -109,20 +147,19 @@ class TaskContext:
     input_type: str  # 'url', 'upload', 'panopto'
     input_data: dict  # Serialized input configuration
     use_ai: bool = True
-    video_path: Optional[str] = None
-    captions: Optional[list[dict]] = None
-    slides: Optional[list[dict]] = None
-    outputs: Optional[dict] = None
+    video_path: str | None = None
+    captions: list[dict] | None = None
+    slides: list[dict] | None = None
+    outputs: dict | None = None
 
     # Per-job settings
     enable_excel: bool = True
     enable_vignette: bool = True
 
     # User settings (custom prompts)
-    vignette_prompt: Optional[str] = None
-    spreadsheet_prompt: Optional[str] = None
-    spreadsheet_columns: Optional[list[dict]] = None
-
+    vignette_prompt: str | None = None
+    spreadsheet_prompt: str | None = None
+    spreadsheet_columns: list[dict] | None = None
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -160,8 +197,17 @@ async def update_job_progress(job_id: int, stage: str, progress: float, message:
     """Update job progress in the database and publish to Redis.
 
     Also checks for cancellation and raises JobCancelledException if cancelled.
+
+    Args:
+        job_id: The job ID to update
+        stage: The current stage name (e.g., 'download_video')
+        progress: Progress within the current stage (0.0 to 1.0)
+        message: Human-readable progress message
     """
     from core.models import Job, JobStatus
+
+    # Calculate overall progress across all stages
+    overall_progress = calculate_overall_progress(stage, progress)
 
     try:
         job = await Job.objects.aget(id=job_id)
@@ -169,21 +215,21 @@ async def update_job_progress(job_id: int, stage: str, progress: float, message:
         # Check for cancellation
         if job.status in (JobStatus.CANCELLING):
             job.status = JobStatus.CANCELLED
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(UTC)
             await job.asave(update_fields=["status", "completed_at"])
 
             raise JobCancelledException(f"Job {job_id} was cancelled")
 
         job.current_stage = message
-        job.progress = progress
+        job.progress = overall_progress
         if job.status == JobStatus.PENDING:
             job.status = JobStatus.RUNNING
-            job.started_at = datetime.now(timezone.utc)
+            job.started_at = datetime.now(UTC)
         await job.asave(update_fields=["current_stage", "progress", "status", "started_at"])
     except Job.DoesNotExist:
         raise JobCancelledException(f"Job {job_id} no longer exists") from None
 
-    await publish_progress(job_id, stage, progress, message)
+    await publish_progress(job_id, stage, overall_progress, message)
 
 
 async def update_job_label(job_id: int, label: str) -> None:
@@ -198,45 +244,125 @@ async def update_job_label(job_id: int, label: str) -> None:
         pass
 
 
+async def get_or_create_lecture(job_id: int, source_id: str | None = None):
+    """Get or create lecture for a job, keyed by source_id.
+
+    Args:
+        job_id: The job ID
+        source_id: Optional source ID. If not provided, will try to get from job's lecture.
+    """
+    from core.models import Job, Lecture
+
+    job = await Job.objects.select_related("user").aget(id=job_id)
+
+    # If source_id not provided, try to get from existing lecture
+    if not source_id:
+        try:
+            existing_lecture = await Lecture.objects.aget(job=job)
+            source_id = existing_lecture.source_id
+        except Lecture.DoesNotExist:
+            # No source_id and no existing lecture, create with empty source_id
+            source_id = ""
+
+    # Check if lecture already exists for this source_id and user
+    if source_id:
+        try:
+            lecture = await Lecture.objects.aget(source_id=source_id, user=job.user)
+            # Update the job reference if this is a retry
+            if lecture.job != job.pk:
+                lecture.job = job
+                await lecture.asave(update_fields=["job"])
+            return lecture
+        except Lecture.DoesNotExist:
+            pass
+
+    # Check if lecture exists by job (for backwards compatibility)
+    try:
+        lecture = await Lecture.objects.aget(job=job)
+        # Update source_id if we have one now
+        if source_id and not lecture.source_id:
+            lecture.source_id = source_id
+            await lecture.asave(update_fields=["source_id"])
+        return lecture
+    except Lecture.DoesNotExist:
+        pass
+
+    # Create new lecture
+    lecture = Lecture(
+        user=job.user,
+        job=job,
+        title=job.label,
+        source_id=source_id,
+        date=datetime.now(UTC),
+    )
+    await lecture.asave()
+    return lecture
+
+
+async def create_artifact(
+    job_id: int, artifact_type, file_path: str, source_id: str | None = None
+) -> None:
+    """Create an artifact record immediately when a file is generated.
+
+    Args:
+        job_id: The job ID
+        artifact_type: Type of artifact (PDF_HANDOUT, EXCEL_STUDY_TABLE, PDF_VIGNETTE)
+        file_path: Path to the generated file
+        source_id: Optional source ID for lecture lookup
+    """
+    from core.models import Artifact
+
+    if not file_path or not os.path.exists(file_path):
+        return
+
+    try:
+        lecture = await get_or_create_lecture(job_id, source_id)
+
+        # Check if artifact already exists for this lecture and type
+        existing = await Artifact.objects.filter(
+            lecture=lecture, artifact_type=artifact_type
+        ).afirst()
+
+        if existing:
+            # Update existing artifact
+            existing.file_path = file_path
+            existing.file_name = os.path.basename(file_path)
+            existing.file_size = os.path.getsize(file_path)
+            await existing.asave()
+        else:
+            # Create new artifact
+            artifact = Artifact(
+                lecture=lecture,
+                artifact_type=artifact_type,
+                file_path=file_path,
+                file_name=os.path.basename(file_path),
+                file_size=int(os.path.getsize(file_path)),
+            )
+            await artifact.asave()
+    except Exception as e:
+        # Log error but don't fail the task
+        print(f"Error creating artifact: {e}")
+
+
 async def mark_job_completed(job_id: int, outputs: dict) -> None:
     """Mark a job as completed in the database."""
-    from core.models import Artifact, ArtifactType, Job, JobStatus, Lecture
+    from core.models import Job, JobStatus, Lecture
 
     try:
         job = await Job.objects.select_related("user").aget(id=job_id)
         job.status = JobStatus.COMPLETED
         job.progress = 1.0
-        job.completed_at = datetime.now(timezone.utc)
+        job.completed_at = datetime.now(UTC)
         await job.asave(update_fields=["status", "progress", "completed_at"])
 
-        # Create lecture
-        lecture = Lecture(
-            user_id=job.user_id,
-            job=job,
-            title=job.label,
-            source_id=outputs.get("source_id", "unknown"),
-            date=datetime.now(timezone.utc),
-        )
-        await lecture.asave()
-
-        # Create artifacts
-        artifact_mapping = {
-            "pdf_path": ArtifactType.PDF_HANDOUT,
-            "xlsx_path": ArtifactType.EXCEL_STUDY_TABLE,
-            "vignette_path": ArtifactType.PDF_VIGNETTE,
-        }
-
-        for key, artifact_type in artifact_mapping.items():
-            if key in outputs and outputs[key] and os.path.exists(outputs[key]):
-                file_path = outputs[key]
-                artifact = Artifact(
-                    lecture=lecture,
-                    artifact_type=artifact_type,
-                    file_path=file_path,
-                    file_name=os.path.basename(file_path),
-                    file_size=os.path.getsize(file_path),
-                )
-                await artifact.asave()
+        # Update lecture source_id if it exists
+        try:
+            lecture = await Lecture.objects.aget(job=job)
+            if "source_id" in outputs:
+                lecture.source_id = outputs["source_id"]
+                await lecture.asave(update_fields=["source_id"])
+        except Lecture.DoesNotExist:
+            pass
 
         # Publish completion
         await publish_progress(job_id, "completed", 1.0, "Job completed successfully")
@@ -284,14 +410,13 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
     await update_job_progress(job_id, stage_name, 0, "Initializing")
 
     input_dict = json.loads(input_data)
-
     # Generate source_id based on input type
     if input_type == "panopto":
-        source_id = input_dict.get("delivery_id", str(hash(input_data)))
+        source_id = input_dict.get("delivery_id")
     elif input_type == "url":
-        source_id = str(hash(input_dict.get("url", "")))
+        source_id = input_dict.get("url", "")
     else:  # upload
-        source_id = str(hash(input_dict.get("path", "")))
+        source_id = input_dict.get("path", "")
 
     # Load job settings
     job = await Job.objects.select_related("user").aget(id=job_id)
@@ -304,7 +429,7 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
     spreadsheet_columns = None
 
     try:
-        user_settings = await UserSettings.objects.aget(user_id=job.user_id)
+        user_settings = await UserSettings.objects.aget(user_id=job.user)
         vignette_prompt = user_settings.get_vignette_prompt()
         spreadsheet_prompt = user_settings.get_spreadsheet_prompt()
         spreadsheet_columns = user_settings.get_spreadsheet_columns()
@@ -568,7 +693,7 @@ async def generate_output_task(data: dict) -> dict:
     # Convert slide dicts back to Slide namedtuples for template
     slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
-    template_path = os.path.join(os.path.dirname(__file__), "..", "..", "templates")
+    template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
     env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("template.html")
     html = template.render(pairs=slides)
@@ -613,7 +738,7 @@ async def compress_pdf_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    source_id = str(hash(pdf_path))
+    source_id = data.get("source_id", "")
     cached = get_cached_result(source_id, stage_name)
     if cached and os.path.exists(cached):
         await update_job_progress(job_id, stage_name, 1.0, "Using cached compressed PDF")
@@ -641,6 +766,11 @@ async def compress_pdf_task(data: dict) -> dict:
             print(f"Ghostscript compression failed: {e}")
 
     set_cached_result(source_id, stage_name, pdf_path)
+
+    # Create artifact immediately
+    from core.models import ArtifactType
+
+    await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
 
     await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
 
@@ -672,7 +802,7 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    source_id = str(hash(pdf_path))
+    source_id = data.get("source_id", "")
     cached = get_cached_result(source_id, stage_name)
     if cached:
         pdf_path, xlsx_path = cached
@@ -691,8 +821,7 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     if not study_table.rows:
         raise ValueError("No rows found in data")
 
-    rows = [row.model_dump(by_alias=True) for row in study_table.rows]
-    df = pd.DataFrame(rows)
+    df = pd.DataFrame(study_table.rows)
 
     base_name = os.path.splitext(os.path.basename(pdf_path))[0]
     output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
@@ -730,7 +859,7 @@ async def generate_spreadsheet_task(data: dict) -> dict:
         cell.border = thin_border
 
     # Write data rows
-    for row_num, row_data in enumerate(rows, 2):
+    for row_num, row_data in enumerate(study_table.rows, 2):
         # Check if this is a single-cell row (only first cell has content)
         non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
         is_section_header = non_empty_cells == 1
@@ -739,7 +868,8 @@ async def generate_spreadsheet_task(data: dict) -> dict:
             cell_value = row_data.get(column_name, "")
             rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
             cell = ws.cell(row=row_num, column=col_num)
-            cell.value = rich_text_value
+            # Only set value if cell is not a merged cell
+            cell.value = rich_text_value  # pyright: ignore[reportAttributeAccessIssue]
             cell.alignment = Alignment(wrap_text=True, vertical="top")
             cell.border = thin_border
 
@@ -776,6 +906,11 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     ctx.outputs["xlsx_path"] = output_filename
     set_cached_result(source_id, stage_name, (pdf_path, output_filename))
 
+    # Create artifact immediately
+    from core.models import ArtifactType
+
+    await create_artifact(job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id)
+
     await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
 
     return ctx.to_dict()
@@ -806,7 +941,7 @@ async def generate_vignette_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    source_id = str(hash(pdf_path))
+    source_id = data.get("source_id", "")
     cached = get_cached_result(source_id, stage_name)
     if cached:
         _, _, vignette_path = cached
@@ -826,7 +961,7 @@ async def generate_vignette_task(data: dict) -> dict:
 
     learning_objectives = [lo.model_dump() for lo in vignette_data.learning_objectives]
 
-    template_path = os.path.join(os.path.dirname(__file__), "..", "templates")
+    template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
     env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("vignette.html")
     html = template.render(learning_objectives=learning_objectives)
@@ -844,6 +979,11 @@ async def generate_vignette_task(data: dict) -> dict:
     ctx.outputs["vignette_path"] = vignette_pdf_path
     xlsx_path = ctx.outputs.get("xlsx_path", "")
     set_cached_result(source_id, stage_name, (pdf_path, xlsx_path, vignette_pdf_path))
+
+    # Create artifact immediately
+    from core.models import ArtifactType
+
+    await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, vignette_pdf_path, ctx.source_id)
 
     await update_job_progress(job_id, stage_name, 1.0, "Vignette generated")
 
@@ -883,9 +1023,8 @@ async def _download_regular_video(
 
     def download():
         def report_progress(count, block_size, total_size):
-            if total_size > 0:
-                progress = count * block_size / total_size
-                # Note: Can't easily update from sync callback
+            # Note: Can't easily update from sync callback in threaded context
+            pass
 
         opener = urllib.request.build_opener()
         opener.addheaders = [("Range", "bytes=0-")]
@@ -937,7 +1076,7 @@ async def _download_m3u8_stream(
                         break
                 except Exception as e:
                     if attempt == 2:
-                        raise ValueError(f"Failed to download segment {i}: {e}")
+                        raise ValueError(f"Failed to download segment {i}: {e}") from e
 
             segment_files.append(segment_path)
             progress = (i + 1) / total_segments * 0.8

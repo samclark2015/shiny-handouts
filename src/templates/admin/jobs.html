@@ -74,7 +74,7 @@
                     <tbody class="bg-white divide-y divide-gray-200">
                         {% for job in jobs %}
                             <tr class="hover:bg-gray-50">
-                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ job.id }}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ job.pk }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{{ job.label|truncatechars:30 }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.user.email }}</td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ job.input_type }}</td>
@@ -95,7 +95,7 @@
                                     {{ job.created_at|date:"m/d/Y g:i A" }}
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm">
-                                    <a href="{% url 'admin:job_detail' job.id %}" 
+                                    <a href="{% url 'admin:job_detail' job.pk %}" 
                                        class="text-blue-600 hover:text-blue-800">View</a>
                                 </td>
                             </tr>

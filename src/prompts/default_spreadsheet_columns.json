@@ -36,10 +36,6 @@
         "description": "Expected outcome and disease progression"
     },
     {
-        "name": "Treatment",
-        "description": "Treatment options and management"
-    },
-    {
         "name": "Classic Step 1–Style Question Stem",
         "description": "A clinically plausible USMLE-style question stem"
     },
@@ -52,7 +48,23 @@
         "description": "Additional notes and important points"
     },
     {
+        "name": "Treatment",
+        "description": "Treatment options and management"
+    },
+    {
         "name": "Mnemonic",
         "description": "Memory aids for the condition"
+    },
+    {
+        "name": "Question Stem Answer",
+        "description": "Answer to the USMLE question generated"
+    },
+    {
+        "name": "Key Terms",
+        "description": "Key terms and brief definitions"
+    },
+    {
+        "name": "Key Etymology",
+        "description": "Etymology of disease name and key terms"
     }
 ]

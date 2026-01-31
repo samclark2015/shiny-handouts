@@ -126,7 +126,7 @@
                 </div>
                 <div class="divide-y divide-gray-200">
                     {% for job in recent_jobs %}
-                    <a href="{% url 'admin:job_detail' job.id %}" class="block px-6 py-4 hover:bg-gray-50">
+                    <a href="{% url 'admin:job_detail' job.pk %}" class="block px-6 py-4 hover:bg-gray-50">
                         <div class="flex items-center justify-between">
                             <div>
                                 <p class="text-sm font-medium text-gray-900">{{ job.label }}</p>

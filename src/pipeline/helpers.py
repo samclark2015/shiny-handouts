@@ -11,7 +11,7 @@ Slide = namedtuple("Slide", ("image", "caption", "extra"))
 Progress = namedtuple("Progress", ("stage", "complete", "total"))
 
 # Prompts directory - now relative to src
-PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
 def read_prompt(name: str) -> str:

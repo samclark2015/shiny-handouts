@@ -12,8 +12,11 @@
             <div class="pl-6 py-2 space-y-2">
                 {% for lecture in lectures %}
                 <details class="border-l-2 border-gray-200 pl-4">
-                    <summary class="py-1 hover:text-blue-600 cursor-pointer font-medium">
-                        📚 {{ lecture.title }}
+                    <summary class="py-1 hover:text-blue-600 cursor-pointer font-medium group">
+                        📚 
+                        <span id="lecture-title-{{ lecture.id }}">
+                            {% include "partials/lecture_title.html" with lecture=lecture %}
+                        </span>
                         <span class="text-sm text-gray-500 ml-2">({{ lecture.artifacts.count }} file{{ lecture.artifacts.count|pluralize }})</span>
                     </summary>
 
@@ -40,13 +43,7 @@
 
                             {% if artifact.file_size %}
                             <span class="text-gray-400 text-xs">
-                                {% if artifact.file_size > 1048576 %}
-                                    {{ artifact.file_size|floatformat:1|divisibleby:1048576 }} MB
-                                {% elif artifact.file_size > 1024 %}
-                                    {{ artifact.file_size|floatformat:1|divisibleby:1024 }} KB
-                                {% else %}
-                                    {{ artifact.file_size }} B
-                                {% endif %}
+                                {{ artifact.file_size|filesizeformat }}
                             </span>
                             {% endif %}
                         </div>
