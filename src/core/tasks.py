@@ -604,9 +604,59 @@ async def extract_captions_task(data: dict) -> dict:
     return ctx.to_dict()
 
 
+# Frame comparison settings
+FRAME_SCALE_FACTOR = 0.5
+FRAME_SIMILARITY_THRESHOLD = 0.85
+
+
+def compare_frames_edges(frame1_gs, frame2_gs) -> float:
+    """Edge-based frame comparison optimized for lecture slides.
+
+    Uses Canny edge detection + normalized correlation.
+    Works well for slides with similar colors but different text/content.
+    Returns a value from 0 to 1, where 1 means identical.
+    """
+    # Apply Canny edge detection
+    edges1 = cv2.Canny(frame1_gs, 50, 150)
+    edges2 = cv2.Canny(frame2_gs, 50, 150)
+
+    # Compute normalized cross-correlation
+    # Flatten arrays for comparison
+    e1 = edges1.flatten().astype(float)
+    e2 = edges2.flatten().astype(float)
+
+    # Normalize
+    e1_norm = e1 - e1.mean()
+    e2_norm = e2 - e2.mean()
+
+    # Compute correlation
+    numerator = (e1_norm * e2_norm).sum()
+    denominator = ((e1_norm**2).sum() * (e2_norm**2).sum()) ** 0.5
+
+    if denominator == 0:
+        return 1.0 if (e1 == e2).all() else 0.0
+
+    return max(0.0, numerator / denominator)
+
+
+def preprocess_frame_for_comparison(frame, scale_factor: float = FRAME_SCALE_FACTOR):
+    """Preprocess a frame for comparison.
+
+    Args:
+        frame: BGR frame from cv2
+        scale_factor: Scale factor for resizing (0.25-1.0)
+
+    Returns:
+        Grayscale, downscaled frame ready for comparison
+    """
+    frame_small = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor)
+    return cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+
+
 @broker.task
 async def match_frames_task(data: dict) -> dict:
     """Match frames to captions based on structural similarity."""
+
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "match_frames"
@@ -636,15 +686,14 @@ async def match_frames_task(data: dict) -> dict:
         os.makedirs(frame_path, exist_ok=True)
 
         for idx, cap in enumerate(captions):
-            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_000 + 500)
+            # Set video position to caption timestamp + 1.5s offset
+            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
             ret, frame = stream.read()
             if not ret:
                 continue
 
-            # Downscale frame for comparison (Option 1: faster SSIM)
-            scale_factor = 0.5
-            frame_small = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor)
-            frame_gs = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+            # Downscale and convert to grayscale for comparison
+            frame_gs = preprocess_frame_for_comparison(frame, FRAME_SCALE_FACTOR)
 
             if last_frame is None:
                 last_frame = frame
@@ -652,16 +701,11 @@ async def match_frames_task(data: dict) -> dict:
                 cum_captions.append(cap.text)
                 continue
 
-            similarity_result = ski.metrics.structural_similarity(
-                last_frame_gs, frame_gs, full=False
-            )
-            score = (
-                similarity_result
-                if isinstance(similarity_result, (int, float))
-                else similarity_result[0]
-            )
+            # Edge-based comparison (works well for lecture slides)
+            score = compare_frames_edges(last_frame_gs, frame_gs)
 
-            if score < 0.925 or (idx + 1) == len(captions):
+            # Threshold for edge correlation (0.92 = significant structural change)
+            if score < FRAME_SIMILARITY_THRESHOLD or (idx + 1) == len(captions):
                 cap_full = " ".join(cum_captions)
                 # Option 4: Use JPEG format for faster I/O
                 image_path = os.path.join(frame_path, f"{uuid4()}.jpg")
