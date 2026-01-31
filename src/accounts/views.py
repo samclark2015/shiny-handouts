@@ -68,6 +68,7 @@ def profile_create(request):
     """Create a new setting profile."""
     default_vignette = read_prompt("generate_vignette_questions")
     default_spreadsheet = read_prompt("generate_spreadsheet")
+    default_mindmap = read_prompt("generate_mindmap")
 
     if request.method == "POST":
         form = SettingProfileForm(request.POST)
@@ -78,11 +79,14 @@ def profile_create(request):
             # Store None if value equals the default
             vp = form.cleaned_data.get("vignette_prompt")
             sp = form.cleaned_data.get("spreadsheet_prompt")
+            mp = form.cleaned_data.get("mindmap_prompt")
 
             if vp is not None and vp == default_vignette:
                 profile.vignette_prompt = None
             if sp is not None and sp == default_spreadsheet:
                 profile.spreadsheet_prompt = None
+            if mp is not None and mp == default_mindmap:
+                profile.mindmap_prompt = None
 
             profile.save()
             messages.success(request, f"Profile '{profile.name}' created successfully.")
@@ -92,6 +96,7 @@ def profile_create(request):
         initial = {
             "vignette_prompt": default_vignette,
             "spreadsheet_prompt": default_spreadsheet,
+            "mindmap_prompt": default_mindmap,
         }
         form = SettingProfileForm(initial=initial)
 
@@ -102,6 +107,7 @@ def profile_create(request):
             "form": form,
             "default_vignette": default_vignette,
             "default_spreadsheet": default_spreadsheet,
+            "default_mindmap": default_mindmap,
             "columns": DEFAULT_SPREADSHEET_COLUMNS,
             "default_columns": DEFAULT_SPREADSHEET_COLUMNS,
             "is_edit": False,
@@ -116,6 +122,7 @@ def profile_edit(request, profile_id: int):
 
     default_vignette = read_prompt("generate_vignette_questions")
     default_spreadsheet = read_prompt("generate_spreadsheet")
+    default_mindmap = read_prompt("generate_mindmap")
 
     if request.method == "POST":
         form = SettingProfileForm(request.POST, instance=profile)
@@ -123,11 +130,14 @@ def profile_edit(request, profile_id: int):
             # Store None if value equals the default
             vp = form.cleaned_data.get("vignette_prompt")
             sp = form.cleaned_data.get("spreadsheet_prompt")
+            mp = form.cleaned_data.get("mindmap_prompt")
 
             if vp is not None and vp == default_vignette:
                 form.instance.vignette_prompt = None
             if sp is not None and sp == default_spreadsheet:
                 form.instance.spreadsheet_prompt = None
+            if mp is not None and mp == default_mindmap:
+                form.instance.mindmap_prompt = None
 
             form.save()
             messages.success(request, f"Profile '{profile.name}' updated successfully.")
@@ -137,6 +147,7 @@ def profile_edit(request, profile_id: int):
         initial = {
             "vignette_prompt": profile.vignette_prompt or default_vignette,
             "spreadsheet_prompt": profile.spreadsheet_prompt or default_spreadsheet,
+            "mindmap_prompt": profile.mindmap_prompt or default_mindmap,
         }
         form = SettingProfileForm(instance=profile, initial=initial)
 
@@ -147,6 +158,7 @@ def profile_edit(request, profile_id: int):
             "form": form,
             "default_vignette": default_vignette,
             "default_spreadsheet": default_spreadsheet,
+            "default_mindmap": default_mindmap,
             "columns": profile.get_spreadsheet_columns(),
             "default_columns": DEFAULT_SPREADSHEET_COLUMNS,
             "is_edit": True,

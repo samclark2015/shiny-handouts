@@ -20,6 +20,7 @@ class SettingProfileForm(forms.ModelForm):
             "is_default",
             "vignette_prompt",
             "spreadsheet_prompt",
+            "mindmap_prompt",
         ]
         widgets = {
             "name": forms.TextInput(
@@ -47,6 +48,13 @@ class SettingProfileForm(forms.ModelForm):
                     "class": "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm",
                 }
             ),
+            "mindmap_prompt": forms.Textarea(
+                attrs={
+                    "rows": 10,
+                    "placeholder": "Leave blank to use the default prompt",
+                    "class": "w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm",
+                }
+            ),
         }
 
     def clean_vignette_prompt(self):
@@ -57,6 +65,12 @@ class SettingProfileForm(forms.ModelForm):
 
     def clean_spreadsheet_prompt(self):
         value = self.cleaned_data.get("spreadsheet_prompt")
+        if value and value.strip() == "":
+            return None
+        return value
+
+    def clean_mindmap_prompt(self):
+        value = self.cleaned_data.get("mindmap_prompt")
         if value and value.strip() == "":
             return None
         return value

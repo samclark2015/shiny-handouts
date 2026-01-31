@@ -105,6 +105,16 @@
                     </span>
                 </div>
                 <div class="flex items-start">
+                    <i class="fa-solid fa-brain w-5 mr-2 mt-0.5 text-gray-400"></i>
+                    <span>
+                        {% if profile.mindmap_prompt %}
+                        Custom mindmap prompt
+                        {% else %}
+                        Default mindmap prompt
+                        {% endif %}
+                    </span>
+                </div>
+                <div class="flex items-start">
                     <i class="fa-solid fa-table-columns w-5 mr-2 mt-0.5 text-gray-400"></i>
                     <span>
                         {{ profile.spreadsheet_columns|length }} spreadsheet columns
