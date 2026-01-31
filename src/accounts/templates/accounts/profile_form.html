@@ -109,7 +109,7 @@
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-gray-50';
         tr.innerHTML = `
-            <td class="px-2 py-2 text-gray-400 cursor-move drag-handle" draggable="true">
+            <td class="px-2 py-2 text-gray-400 cursor-move drag-handle">
                 <i class="fas fa-grip-vertical"></i>
             </td>
             <td class="px-4 py-2">
@@ -137,42 +137,77 @@
         defaults.forEach(col => addRow(col.name, col.description));
     }
 
+    let draggedRow = null;
+    let placeholder = null;
+
     function setupDragAndDrop(row) {
         const handle = row.querySelector('.drag-handle');
-        let draggedRow = null;
 
-        handle.addEventListener('dragstart', function (e) {
-            draggedRow = row;
-            row.classList.add('opacity-50');
-        });
-
-        row.addEventListener('dragend', function (e) {
-            row.classList.remove('opacity-50');
-        });
-
-        row.addEventListener('dragover', function (e) {
+        handle.addEventListener('mousedown', function (e) {
             e.preventDefault();
-            const tbody = row.parentNode;
-            const afterElement = getDragAfterElement(tbody, e.clientY);
-            if (afterElement == null) {
-                tbody.appendChild(draggedRow);
-            } else {
-                tbody.insertBefore(draggedRow, afterElement);
-            }
+            draggedRow = row;
+            
+            // Create placeholder
+            placeholder = document.createElement('tr');
+            placeholder.className = 'bg-blue-100 border-2 border-dashed border-blue-400';
+            placeholder.innerHTML = `<td colspan="4" class="py-2">&nbsp;</td>`;
+            
+            // Style the dragged row
+            draggedRow.classList.add('opacity-50', 'bg-gray-100');
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
         });
     }
 
-    function getDragAfterElement(container, y) {
-        const draggableElements = [...container.querySelectorAll('tr:not(.opacity-50)')];
-        return draggableElements.reduce((closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-                return { offset: offset, element: child };
-            } else {
-                return closest;
+    function onMouseMove(e) {
+        if (!draggedRow) return;
+        
+        const tbody = document.getElementById('columns-body');
+        const rows = [...tbody.querySelectorAll('tr:not(.opacity-50)')];
+        
+        // Remove existing placeholder
+        if (placeholder.parentNode) {
+            placeholder.remove();
+        }
+        
+        // Find where to insert placeholder
+        let insertBefore = null;
+        for (const row of rows) {
+            const rect = row.getBoundingClientRect();
+            const midY = rect.top + rect.height / 2;
+            if (e.clientY < midY) {
+                insertBefore = row;
+                break;
             }
-        }, { offset: Number.NEGATIVE_INFINITY }).element;
+        }
+        
+        if (insertBefore) {
+            tbody.insertBefore(placeholder, insertBefore);
+        } else {
+            tbody.appendChild(placeholder);
+        }
+    }
+
+    function onMouseUp(e) {
+        if (!draggedRow) return;
+        
+        const tbody = document.getElementById('columns-body');
+        
+        // Move the row to placeholder position
+        if (placeholder.parentNode) {
+            tbody.insertBefore(draggedRow, placeholder);
+            placeholder.remove();
+        }
+        
+        // Reset styles
+        draggedRow.classList.remove('opacity-50', 'bg-gray-100');
+        
+        // Cleanup
+        draggedRow = null;
+        placeholder = null;
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
     }
 
     // Initialize with existing columns or defaults
