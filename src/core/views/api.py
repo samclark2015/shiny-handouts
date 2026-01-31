@@ -31,6 +31,7 @@ def upload_file(request):
     # Get per-job settings from form
     enable_excel = request.POST.get("enable_excel", "on") == "on"
     enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+    profile_id = request.POST.get("profile_id", "").strip()
 
     # Save the file
     filename = get_valid_filename(file.name)
@@ -42,6 +43,16 @@ def upload_file(request):
         for chunk in file.chunks():
             destination.write(chunk)
 
+    # Get setting profile if specified
+    from accounts.models import SettingProfile
+
+    setting_profile = None
+    if profile_id:
+        try:
+            setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
+        except (ValueError, SettingProfile.DoesNotExist):
+            pass
+
     # Create job record
     job = Job.objects.create(
         user=request.user,
@@ -51,6 +62,7 @@ def upload_file(request):
         input_data=json.dumps({"path": file_path, "filename": filename}),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
+        setting_profile=setting_profile,
     )
 
     # Start the pipeline asynchronously
@@ -75,9 +87,20 @@ def process_url(request):
     # Get per-job settings from form
     enable_excel = request.POST.get("enable_excel", "on") == "on"
     enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+    profile_id = request.POST.get("profile_id", "").strip()
 
     # Extract filename from URL
     filename = video_url.split("/")[-1].split("?")[0] or "video"
+
+    # Get setting profile if specified
+    from accounts.models import SettingProfile
+
+    setting_profile = None
+    if profile_id:
+        try:
+            setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
+        except (ValueError, SettingProfile.DoesNotExist):
+            pass
 
     # Create job record
     job = Job.objects.create(
@@ -88,6 +111,7 @@ def process_url(request):
         input_data=json.dumps({"url": video_url}),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
+        setting_profile=setting_profile,
     )
 
     # Start the pipeline
@@ -115,6 +139,7 @@ def process_panopto(request):
     # Get per-job settings from form
     enable_excel = request.POST.get("enable_excel", "on") == "on"
     enable_vignette = request.POST.get("enable_vignette", "on") == "on"
+    profile_id = request.POST.get("profile_id", "").strip()
 
     # Parse Panopto URL
     parts = urlparse(panopto_url)
@@ -126,6 +151,16 @@ def process_panopto(request):
         return render(
             request, "partials/error.html", {"message": "Invalid Panopto URL"}, status=400
         )
+
+    # Get setting profile if specified
+    from accounts.models import SettingProfile
+
+    setting_profile = None
+    if profile_id:
+        try:
+            setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
+        except (ValueError, SettingProfile.DoesNotExist):
+            pass
 
     # Create job record
     job = Job.objects.create(
@@ -142,6 +177,7 @@ def process_panopto(request):
         ),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
+        setting_profile=setting_profile,
     )
 
     # Start the pipeline

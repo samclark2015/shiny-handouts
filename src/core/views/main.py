@@ -31,6 +31,12 @@ def index(request):
             lectures_by_date[date_key] = []
         lectures_by_date[date_key].append(lecture)
 
+    # Get user's setting profiles
+    from accounts.models import SettingProfile
+
+    profiles = SettingProfile.objects.filter(user=request.user).order_by("name")
+    default_profile = profiles.filter(is_default=True).first()
+
     return render(
         request,
         "index.html",
@@ -38,6 +44,8 @@ def index(request):
             "jobs": jobs,
             "lectures_by_date": lectures_by_date,
             "user": request.user,
+            "profiles": profiles,
+            "default_profile": default_profile,
         },
     )
 

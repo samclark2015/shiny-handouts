@@ -481,7 +481,7 @@ async def on_worker_shutdown(state):
 @broker.task
 async def generate_context_task(job_id: int, input_type: str, input_data: str) -> dict:
     """Generate processing context from input."""
-    from accounts.models import UserSettings
+    from accounts.models import SettingProfile, UserSettings
     from core.models import Job
 
     stage_name = "generate_context"
@@ -497,23 +497,30 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
     else:  # upload
         source_id = input_dict.get("path", "")
 
-    # Load job settings
-    job = await Job.objects.select_related("user").aget(id=job_id)
+    # Load job settings and profile
+    job = await Job.objects.select_related("user", "setting_profile").aget(id=job_id)
     enable_excel = job.enable_excel
     enable_vignette = job.enable_vignette
 
-    # Load user settings
+    # Load settings - prioritize setting profile over user settings
     vignette_prompt = None
     spreadsheet_prompt = None
     spreadsheet_columns = None
 
-    try:
-        user_settings = await UserSettings.objects.aget(user_id=job.user)
-        vignette_prompt = user_settings.get_vignette_prompt()
-        spreadsheet_prompt = user_settings.get_spreadsheet_prompt()
-        spreadsheet_columns = user_settings.get_spreadsheet_columns()
-    except UserSettings.DoesNotExist:
-        pass
+    # First, try to use the setting profile if one is associated with the job
+    if job.setting_profile:
+        vignette_prompt = job.setting_profile.get_vignette_prompt()
+        spreadsheet_prompt = job.setting_profile.get_spreadsheet_prompt()
+        spreadsheet_columns = job.setting_profile.get_spreadsheet_columns()
+    else:
+        # Fall back to user settings if no profile is specified
+        try:
+            user_settings = await UserSettings.objects.aget(user_id=job.user)
+            vignette_prompt = user_settings.get_vignette_prompt()
+            spreadsheet_prompt = user_settings.get_spreadsheet_prompt()
+            spreadsheet_columns = user_settings.get_spreadsheet_columns()
+        except UserSettings.DoesNotExist:
+            pass
 
     ctx = TaskContext(
         job_id=job_id,

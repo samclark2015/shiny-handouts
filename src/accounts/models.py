@@ -7,11 +7,7 @@ Custom user model with OAuth integration for Authentik.
 import json
 import os
 
-from django.contrib.auth.models import (
-    AbstractBaseUser,
-    BaseUserManager,
-    PermissionsMixin,
-)
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
 
@@ -105,8 +101,93 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.name
 
 
+class SettingProfile(models.Model):
+    """A named profile of settings for handout generation.
+
+    Users can create multiple profiles for different lecture types or courses.
+    """
+
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="setting_profiles",
+    )
+    name = models.CharField(
+        max_length=255,
+        help_text="Name for this settings profile (e.g., 'Pathology', 'Cardiology')",
+    )
+    is_default = models.BooleanField(
+        default=False,
+        help_text="Use this profile as the default for new handouts",
+    )
+
+    # Custom prompts
+    vignette_prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom prompt for generating quiz/vignette questions. Leave blank to use default.",
+    )
+    spreadsheet_prompt = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Custom prompt for generating Excel study table. Leave blank to use default.",
+    )
+
+    # Excel column configuration (stored as JSON)
+    spreadsheet_columns = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Custom columns for Excel file. Each column should have 'name' and 'description' keys.",
+    )
+
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "setting_profiles"
+        verbose_name = "setting profile"
+        verbose_name_plural = "setting profiles"
+        unique_together = [["user", "name"]]
+        ordering = ["name"]
+
+    def __str__(self):
+        default_marker = " (default)" if self.is_default else ""
+        return f"{self.name}{default_marker}"
+
+    def save(self, *args, **kwargs):
+        # Set default columns if empty
+        if not self.spreadsheet_columns:
+            self.spreadsheet_columns = DEFAULT_SPREADSHEET_COLUMNS
+
+        # If setting as default, unset other defaults for this user
+        if self.is_default:
+            SettingProfile.objects.filter(user=self.user, is_default=True).exclude(
+                pk=self.pk
+            ).update(is_default=False)
+
+        super().save(*args, **kwargs)
+
+    def get_vignette_prompt(self) -> str | None:
+        """Get the vignette prompt, or None if using default."""
+        return self.vignette_prompt if self.vignette_prompt else None
+
+    def get_spreadsheet_prompt(self) -> str | None:
+        """Get the spreadsheet prompt, or None if using default."""
+        return self.spreadsheet_prompt if self.spreadsheet_prompt else None
+
+    def get_spreadsheet_columns(self) -> list[dict]:
+        """Get the spreadsheet columns configuration."""
+        if self.spreadsheet_columns:
+            return self.spreadsheet_columns
+        return DEFAULT_SPREADSHEET_COLUMNS
+
+
 class UserSettings(models.Model):
-    """User-specific settings for handout generation."""
+    """User-specific settings for handout generation.
+
+    DEPRECATED: This model is kept for backwards compatibility.
+    Use SettingProfile instead for new features.
+    """
 
     user = models.OneToOneField(
         User,

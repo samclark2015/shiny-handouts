@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} Setting Profile{% endblock %}
+
+{% block body %}
+<header class="bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-900">
+            {% if is_edit %}Edit{% else %}Create{% endif %} Setting Profile
+        </h1>
+        <div class="flex items-center space-x-4">
+            <a href="{% url 'auth:profiles' %}" class="text-sm text-blue-600 hover:text-blue-800">
+                <i class="fa-solid fa-arrow-left mr-1"></i>Back to Profiles
+            </a>
+            <a href="{% url 'account_logout' %}"
+                class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Logout
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    {% if messages %}
+    <ul class="mb-4">
+        {% for message in messages %}
+        <li
+            class="p-3 rounded-md {% if message.tags == 'success' %}bg-green-50 text-green-700 border border-green-200{% else %}bg-red-50 text-red-700 border border-red-200{% endif %}">
+            {{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="bg-white rounded-lg shadow-md p-6 space-y-6">
+        <form method="post" class="space-y-6" id="profile-form">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Profile Name *</label>
+                <p class="text-xs text-gray-500 mb-2">Give this profile a descriptive name (e.g., "Pathology", "Cardiology")</p>
+                {{ form.name }}
+                {% if form.name.errors %}
+                <p class="text-red-600 text-sm mt-1">{{ form.name.errors.0 }}</p>
+                {% endif %}
+            </div>
+
+            <div>
+                <label class="inline-flex items-center cursor-pointer">
+                    {{ form.is_default }}
+                    <span class="ml-2 text-sm font-medium text-gray-700">Set as default profile</span>
+                </label>
+                <p class="text-xs text-gray-500 ml-6 mt-1">The default profile will be pre-selected when generating handouts</p>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Vignette Prompt</label>
+                <p class="text-xs text-gray-500 mb-2">Custom prompt for generating quiz/vignette questions. Leave blank to use the default.</p>
+                {{ form.vignette_prompt }}
+                <details class="mt-2">
+                    <summary class="text-xs text-gray-600 cursor-pointer">View default prompt</summary>
+                    <pre
+                        class="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs whitespace-pre-wrap">{{ default_vignette }}</pre>
+                </details>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Spreadsheet Prompt</label>
+                <p class="text-xs text-gray-500 mb-2">Custom prompt for generating Excel study table. Leave blank to use the default.</p>
+                {{ form.spreadsheet_prompt }}
+                <details class="mt-2">
+                    <summary class="text-xs text-gray-600 cursor-pointer">View default prompt</summary>
+                    <pre
+                        class="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs whitespace-pre-wrap">{{ default_spreadsheet }}</pre>
+                </details>
+            </div>
+
+            {% include "partials/spreadsheet_columns.html" %}
+
+            <div class="flex justify-end space-x-3">
+                <a href="{% url 'auth:profiles' %}"
+                    class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-md font-medium transition-colors">
+                    Cancel
+                </a>
+                <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">
+                    {% if is_edit %}Update{% else %}Create{% endif %} Profile
+                </button>
+            </div>
+        </form>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{{ default_columns|json_script:"default-columns-data" }}
+<script>
+    function addRow(name = '', description = '') {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        tr.innerHTML = `
+            <td class="px-2 py-2 text-gray-400 cursor-move drag-handle" draggable="true">
+                <i class="fas fa-grip-vertical"></i>
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full px-2 py-1 border border-gray-300 rounded-md" value="${name}" placeholder="Column name">
+            </td>
+            <td class="px-4 py-2">
+                <textarea class="w-full px-2 py-1 border border-gray-300 rounded-md" placeholder="Description (optional)">${description}</textarea>
+            </td>
+            <td class="px-4 py-2 text-right">
+                <button type="button" class="text-red-600 hover:text-red-800" onclick="removeRow(this)">Remove</button>
+            </td>`;
+        const tbody = document.getElementById('columns-body');
+        tbody.appendChild(tr);
+        setupDragAndDrop(tr);
+    }
+
+    function removeRow(btn) {
+        btn.closest('tr').remove();
+    }
+
+    function loadDefaults() {
+        const tbody = document.getElementById('columns-body');
+        tbody.innerHTML = '';
+        const defaults = JSON.parse(document.getElementById('default-columns-data').textContent);
+        defaults.forEach(col => addRow(col.name, col.description));
+    }
+
+    function setupDragAndDrop(row) {
+        const handle = row.querySelector('.drag-handle');
+        let draggedRow = null;
+
+        handle.addEventListener('dragstart', function (e) {
+            draggedRow = row;
+            row.classList.add('opacity-50');
+        });
+
+        row.addEventListener('dragend', function (e) {
+            row.classList.remove('opacity-50');
+        });
+
+        row.addEventListener('dragover', function (e) {
+            e.preventDefault();
+            const tbody = row.parentNode;
+            const afterElement = getDragAfterElement(tbody, e.clientY);
+            if (afterElement == null) {
+                tbody.appendChild(draggedRow);
+            } else {
+                tbody.insertBefore(draggedRow, afterElement);
+            }
+        });
+    }
+
+    function getDragAfterElement(container, y) {
+        const draggableElements = [...container.querySelectorAll('tr:not(.opacity-50)')];
+        return draggableElements.reduce((closest, child) => {
+            const box = child.getBoundingClientRect();
+            const offset = y - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) {
+                return { offset: offset, element: child };
+            } else {
+                return closest;
+            }
+        }, { offset: Number.NEGATIVE_INFINITY }).element;
+    }
+
+    // Initialize with existing columns or defaults
+    window.addEventListener('DOMContentLoaded', function () {
+        const tbody = document.getElementById('columns-body');
+        if (tbody.children.length === 0) {
+            loadDefaults();
+        } else {
+            // Setup drag and drop for existing rows
+            tbody.querySelectorAll('tr').forEach(setupDragAndDrop);
+        }
+    });
+
+    const form = document.getElementById('profile-form');
+
+    document.getElementById('profile-form').addEventListener('submit', function (e) {
+        const tbody = document.getElementById('columns-body');
+        const rows = tbody.querySelectorAll('tr');
+        const columns = [];
+        rows.forEach(row => {
+            const nameInput = row.querySelector('input[type="text"]');
+            const descInput = row.querySelector('textarea');
+            const name = nameInput.value.trim();
+            const description = descInput.value.trim();
+            if (name) {
+                columns.push({ name, description });
+            }
+        });
+
+        // Set hidden field
+        const hiddenInput = document.querySelector('input[name="spreadsheet_columns_json"]');
+        if (hiddenInput) {
+            hiddenInput.value = JSON.stringify(columns);
+        }
+    });
+</script>
+{% endblock %}

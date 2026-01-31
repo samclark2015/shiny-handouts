@@ -66,6 +66,16 @@ class Job(models.Model):
         help_text="Generate vignette quiz questions for this job",
     )
 
+    # Setting profile reference (optional)
+    setting_profile = models.ForeignKey(
+        "accounts.SettingProfile",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="jobs",
+        help_text="Settings profile used for this job",
+    )
+
     # Timing
     created_at = models.DateTimeField(default=timezone.now)
     started_at = models.DateTimeField(blank=True, null=True)
