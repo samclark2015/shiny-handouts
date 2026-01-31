@@ -1,12 +1,12 @@
 """API views for HTMX interactions."""
 
-import asyncio
 import json
 import os
 from datetime import datetime, timezone
 from typing import Generator
 from urllib.parse import parse_qs, urlparse
 
+from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse, StreamingHttpResponse
@@ -56,7 +56,7 @@ def upload_file(request):
     # Start the pipeline asynchronously
     from core.tasks import start_pipeline
 
-    task_id = asyncio.run(start_pipeline(job.pk, "upload", job.input_data))
+    task_id = async_to_sync(start_pipeline)(job.pk, "upload", job.input_data)
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -93,7 +93,7 @@ def process_url(request):
     # Start the pipeline
     from core.tasks import start_pipeline
 
-    task_id = asyncio.run(start_pipeline(job.pk, "url", job.input_data))
+    task_id = async_to_sync(start_pipeline)(job.pk, "url", job.input_data)
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -147,7 +147,7 @@ def process_panopto(request):
     # Start the pipeline
     from core.tasks import start_pipeline
 
-    task_id = asyncio.run(start_pipeline(job.pk, "panopto", job.input_data))
+    task_id = async_to_sync(start_pipeline)(job.pk, "panopto", job.input_data)
     job.taskiq_task_id = task_id
     job.save(update_fields=["taskiq_task_id"])
 
@@ -216,7 +216,7 @@ def retry_job(request, job_id: int):
         # Start new pipeline
         from core.tasks import start_pipeline
 
-        task_id = asyncio.run(start_pipeline(job.pk, job.input_type, job.input_data))
+        task_id = async_to_sync(start_pipeline)(job.pk, job.input_type, job.input_data)
         job.taskiq_task_id = task_id
         job.save(update_fields=["taskiq_task_id"])
 

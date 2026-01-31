@@ -28,6 +28,7 @@ import m3u8
 import pandas as pd
 import redis.asyncio as aioredis
 import skimage as ski
+from asgiref.sync import sync_to_async
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -47,7 +48,7 @@ from pipeline.ai import (
 )
 from pipeline.helpers import Caption, Slide, fetch, parse_markdown_bold_to_rich_text
 
-from .cache import CacheContext, get_cached_result, set_cached_result
+from .cache import CacheContext
 from .middleware import PipelineErrorMiddleware
 
 # Directory configuration
@@ -255,7 +256,8 @@ async def update_job_label(job_id: int, label: str) -> None:
         pass
 
 
-async def get_or_create_lecture(job_id: int, source_id: str | None = None):
+@sync_to_async
+def get_or_create_lecture(job_id: int, source_id: str | None = None):
     """Get or create lecture for a job, keyed by source_id.
 
     Args:
@@ -264,12 +266,12 @@ async def get_or_create_lecture(job_id: int, source_id: str | None = None):
     """
     from core.models import Job, Lecture
 
-    job = await Job.objects.select_related("user").aget(id=job_id)
+    job = Job.objects.select_related("user").get(id=job_id)
 
     # If source_id not provided, try to get from existing lecture
     if not source_id:
         try:
-            existing_lecture = await Lecture.objects.aget(job=job)
+            existing_lecture = Lecture.objects.get(job=job)
             source_id = existing_lecture.source_id
         except Lecture.DoesNotExist:
             # No source_id and no existing lecture, create with empty source_id
@@ -278,22 +280,22 @@ async def get_or_create_lecture(job_id: int, source_id: str | None = None):
     # Check if lecture already exists for this source_id and user
     if source_id:
         try:
-            lecture = await Lecture.objects.aget(source_id=source_id, user=job.user)
+            lecture = Lecture.objects.get(source_id=source_id, user=job.user)
             # Update the job reference if this is a retry
-            if lecture.job != job.pk:
-                lecture.job = job
-                await lecture.asave(update_fields=["job"])
+            if lecture.job_id != job.pk:
+                lecture.job_id = job.pk
+                lecture.save(update_fields=["job"])
             return lecture
         except Lecture.DoesNotExist:
             pass
 
     # Check if lecture exists by job (for backwards compatibility)
     try:
-        lecture = await Lecture.objects.aget(job=job)
+        lecture = Lecture.objects.get(job=job)
         # Update source_id if we have one now
         if source_id and not lecture.source_id:
             lecture.source_id = source_id
-            await lecture.asave(update_fields=["source_id"])
+            lecture.save(update_fields=["source_id"])
         return lecture
     except Lecture.DoesNotExist:
         pass
@@ -306,11 +308,12 @@ async def get_or_create_lecture(job_id: int, source_id: str | None = None):
         source_id=source_id,
         date=datetime.now(UTC),
     )
-    await lecture.asave()
+    lecture.save()
     return lecture
 
 
-async def create_artifact(
+@sync_to_async
+def create_artifact(
     job_id: int, artifact_type, file_path: str, source_id: str | None = None
 ) -> None:
     """Create an artifact record immediately when a file is generated.
@@ -327,32 +330,71 @@ async def create_artifact(
         return
 
     try:
-        lecture = await get_or_create_lecture(job_id, source_id)
+        # Call the sync version directly since we're in sync context
+        from core.models import Job, Lecture
+
+        job = Job.objects.select_related("user").get(id=job_id)
+
+        # If source_id not provided, try to get from existing lecture
+        if not source_id:
+            try:
+                existing_lecture = Lecture.objects.get(job=job)
+                source_id = existing_lecture.source_id
+            except Lecture.DoesNotExist:
+                source_id = ""
+
+        # Check if lecture already exists for this source_id and user
+        lecture = None
+        if source_id:
+            try:
+                lecture = Lecture.objects.get(source_id=source_id, user=job.user)
+                if lecture.job != job.pk:
+                    lecture.job = job
+                    lecture.save(update_fields=["job"])
+            except Lecture.DoesNotExist:
+                pass
+
+        # Check if lecture exists by job (for backwards compatibility)
+        if not lecture:
+            try:
+                lecture = Lecture.objects.get(job=job)
+                if source_id and not lecture.source_id:
+                    lecture.source_id = source_id
+                    lecture.save(update_fields=["source_id"])
+            except Lecture.DoesNotExist:
+                pass
+
+        # Create new lecture if needed
+        if not lecture:
+            lecture = Lecture.objects.create(
+                user=job.user,
+                job=job,
+                title=job.label,
+                source_id=source_id,
+                date=datetime.now(UTC),
+            )
 
         # Check if artifact already exists for this lecture and type
-        existing = await Artifact.objects.filter(
-            lecture=lecture, artifact_type=artifact_type
-        ).afirst()
+        existing = Artifact.objects.filter(lecture=lecture, artifact_type=artifact_type).first()
 
         if existing:
             # Update existing artifact
             existing.file_path = file_path
             existing.file_name = os.path.basename(file_path)
             existing.file_size = os.path.getsize(file_path)
-            await existing.asave()
+            existing.save()
         else:
             # Create new artifact
-            artifact = Artifact(
+            Artifact.objects.create(
                 lecture=lecture,
                 artifact_type=artifact_type,
                 file_path=file_path,
                 file_name=os.path.basename(file_path),
                 file_size=int(os.path.getsize(file_path)),
             )
-            await artifact.asave()
     except Exception as e:
         # Log error but don't fail the task
-        print(f"Error creating artifact: {e}")
+        logging.exception(f"Failed to create artifact for job {job_id}: {e}")
 
 
 async def mark_job_completed(job_id: int, outputs: dict) -> None:
@@ -386,27 +428,28 @@ async def mark_job_completed(job_id: int, outputs: dict) -> None:
 def cache_context(ctx: TaskContext, stage_name: str):
     """Context manager for stage-level caching.
 
-    Yields the cached context if available, otherwise yields None.
-    On exit, stores the context in the cache.
+    Automatically updates ctx from cache if available and yields True.
+    Otherwise yields False and stores ctx in cache on exit.
 
     Usage:
-        with cache_context(ctx, stage_name) as cached:
-            if cached:
-                return cached.to_dict()
+        with cache_context(ctx, stage_name) as cache_hit:
+            if cache_hit:
+                return  # Skip execution, data loaded from cache
             # ... do work ...
     """
     cache = CacheContext(ctx.source_id)
 
     # Check cache on entry
     cached = cache.get(stage_name)
-    if cached:
-        # If we hit cache, update ctx
-        logging.info(f"Cache hit for stage {stage_name}, loading cached data {cached}")
-        ctx.update_from(TaskContext.from_dict(cached))
-    else:
-        yield
 
-        # Store in cache on exit
+    if cached:
+        logging.info(f"Cache hit for stage {stage_name}, loading cached data")
+        ctx.update_from(TaskContext.from_dict({**cached, "job_id": ctx.job_id}))
+
+    yield bool(cached)  # Yield True if cache hit, False otherwise
+
+    # Store in cache on exit only if it wasn't cached
+    if not cached:
         cache.set(stage_name, ctx.to_dict())
 
 
@@ -500,7 +543,11 @@ async def download_video_task(data: dict) -> dict:
     await update_job_progress(job_id, stage_name, 0, "Checking video")
 
     # Check cache first
-    with cache_context(ctx, stage_name):
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "Video downloaded")
+            return ctx.to_dict()
+
         video_path = ctx.get_video_path()
 
         if ctx.input_type == "upload":
@@ -535,7 +582,11 @@ async def extract_captions_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Extracting captions")
 
-    with cache_context(ctx, stage_name):
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "Captions extracted")
+            return ctx.to_dict()
+
         captions = await generate_captions(ctx.get_video_path())
         ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
 
@@ -554,7 +605,11 @@ async def match_frames_task(data: dict) -> dict:
     await update_job_progress(job_id, stage_name, 0, "Matching frames")
 
     # Check cache first
-    with cache_context(ctx, stage_name):
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
+            return ctx.to_dict()
+
         if not ctx.captions:
             ctx.slides = []
             return ctx.to_dict()
@@ -629,7 +684,11 @@ async def transform_slides_ai_task(data: dict) -> dict:
         return ctx.to_dict()
 
     # Check cache first
-    with cache_context(ctx, stage_name):
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "Slides transformed")
+            return ctx.to_dict()
+
         output = []
         slides = cast(list[dict], ctx.slides)
         total = len(slides)
@@ -664,7 +723,11 @@ async def generate_output_task(data: dict) -> dict:
     await update_job_progress(job_id, stage_name, 0, "Generating PDF")
 
     # Check cache first
-    with cache_context(ctx, stage_name):
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "PDF generated")
+            return ctx.to_dict()
+
         # Convert slide dicts back to Slide namedtuples for template
         slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
@@ -709,40 +772,40 @@ async def compress_pdf_task(data: dict) -> dict:
         return ctx.to_dict()
 
     source_id = data.get("source_id", "")
-    cached = get_cached_result(source_id, stage_name)
-    if cached and os.path.exists(cached):
-        await update_job_progress(job_id, stage_name, 1.0, "Using cached compressed PDF")
-        return ctx.to_dict()
 
-    with TemporaryDirectory() as temp_dir:
-        output_path = os.path.join(temp_dir, f"compressed_{os.path.basename(pdf_path)}")
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
+            return ctx.to_dict()
 
-        gs_command = [
-            "gs",
-            "-sDEVICE=pdfwrite",
-            "-dCompatibilityLevel=1.4",
-            "-dPDFSETTINGS=/ebook",
-            "-dNOPAUSE",
-            "-dQUIET",
-            "-dBATCH",
-            f"-sOutputFile={output_path}",
-            pdf_path,
-        ]
+        # Compress using Ghostscript
+        with TemporaryDirectory() as temp_dir:
+            output_path = os.path.join(temp_dir, f"compressed_{os.path.basename(pdf_path)}")
 
-        try:
-            await asyncio.to_thread(subprocess.run, gs_command, check=True)
-            shutil.move(output_path, pdf_path)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            print(f"Ghostscript compression failed: {e}")
+            gs_command = [
+                "gs",
+                "-sDEVICE=pdfwrite",
+                "-dCompatibilityLevel=1.4",
+                "-dPDFSETTINGS=/ebook",
+                "-dNOPAUSE",
+                "-dQUIET",
+                "-dBATCH",
+                f"-sOutputFile={output_path}",
+                pdf_path,
+            ]
 
-    set_cached_result(source_id, stage_name, pdf_path)
+            try:
+                await asyncio.to_thread(subprocess.run, gs_command, check=True)
+                shutil.move(output_path, pdf_path)
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                print(f"Ghostscript compression failed: {e}")
 
-    # Create artifact immediately
-    from core.models import ArtifactType
+        # Create artifact immediately
+        from core.models import ArtifactType
 
-    await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
+        await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
 
-    await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
+        await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
 
     return ctx.to_dict()
 
@@ -768,116 +831,112 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    source_id = data.get("source_id", "")
-    cached = get_cached_result(source_id, stage_name)
-    if cached:
-        pdf_path, xlsx_path = cached
-        if os.path.exists(xlsx_path):
-            ctx.outputs["xlsx_path"] = xlsx_path
-            await update_job_progress(job_id, stage_name, 1.0, "Using cached spreadsheet")
+    with cache_context(ctx, stage_name) as cache_hit:
+        if cache_hit:
+            await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
             return ctx.to_dict()
 
-    await update_job_progress(job_id, stage_name, 0.2, "Analyzing document")
-    study_table = await generate_spreadsheet_helper(
-        pdf_path,
-        custom_prompt=ctx.spreadsheet_prompt,
-        custom_columns=ctx.spreadsheet_columns,
-    )
-
-    if not study_table.rows:
-        raise ValueError("No rows found in data")
-
-    df = pd.DataFrame(study_table.rows)
-
-    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-    output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
-
-    await update_job_progress(job_id, stage_name, 0.6, "Writing Excel file")
-
-    # Style constants - modify these to change colors
-    HEADER_BG_COLOR = "D3D3D3"  # Light grey
-    CELL_BG_COLOR = "ADD8E6"  # Baby blue
-    SECTION_HEADER_BG_COLOR = "6CB4E8"  # Darker blue for single-cell rows
-    BORDER_COLOR = "000000"  # Black
-
-    # Create border style
-    thin_border = Border(
-        left=Side(style="thin", color=BORDER_COLOR),
-        right=Side(style="thin", color=BORDER_COLOR),
-        top=Side(style="thin", color=BORDER_COLOR),
-        bottom=Side(style="thin", color=BORDER_COLOR),
-    )
-
-    wb = Workbook()
-    ws = wb.active
-    assert ws is not None
-
-    ws.title = "Study Table"
-
-    # Write header row
-    for col_num, column_name in enumerate(df.columns, 1):
-        cell = ws.cell(row=1, column=col_num, value=column_name)
-        cell.font = Font(bold=True, size=11)
-        cell.alignment = Alignment(wrap_text=True, vertical="top")
-        cell.fill = PatternFill(
-            start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
+        study_table = await generate_spreadsheet_helper(
+            pdf_path,
+            custom_prompt=ctx.spreadsheet_prompt,
+            custom_columns=ctx.spreadsheet_columns,
         )
-        cell.border = thin_border
 
-    # Write data rows
-    for row_num, row_data in enumerate(study_table.rows, 2):
-        # Check if this is a single-cell row (only first cell has content)
-        non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
-        is_section_header = non_empty_cells == 1
+        if not study_table.rows:
+            raise ValueError("No rows found in data")
 
+        df = pd.DataFrame(study_table.rows)
+
+        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
+
+        await update_job_progress(job_id, stage_name, 0.6, "Writing Excel file")
+
+        # Style constants - modify these to change colors
+        HEADER_BG_COLOR = "D3D3D3"  # Light grey
+        CELL_BG_COLOR = "ADD8E6"  # Baby blue
+        SECTION_HEADER_BG_COLOR = "6CB4E8"  # Darker blue for single-cell rows
+        BORDER_COLOR = "000000"  # Black
+
+        # Create border style
+        thin_border = Border(
+            left=Side(style="thin", color=BORDER_COLOR),
+            right=Side(style="thin", color=BORDER_COLOR),
+            top=Side(style="thin", color=BORDER_COLOR),
+            bottom=Side(style="thin", color=BORDER_COLOR),
+        )
+
+        wb = Workbook()
+        ws = wb.active
+        assert ws is not None
+
+        ws.title = "Study Table"
+
+        # Write header row
         for col_num, column_name in enumerate(df.columns, 1):
-            cell_value = row_data.get(column_name, "")
-            rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
-            cell = ws.cell(row=row_num, column=col_num)
-            # Only set value if cell is not a merged cell
-            cell.value = rich_text_value  # pyright: ignore[reportAttributeAccessIssue]
+            cell = ws.cell(row=1, column=col_num, value=column_name)
+            cell.font = Font(bold=True, size=11)
             cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.fill = PatternFill(
+                start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
+            )
             cell.border = thin_border
 
-            # Apply background color and font styling
-            if is_section_header:
-                cell.fill = PatternFill(
-                    start_color=SECTION_HEADER_BG_COLOR,
-                    end_color=SECTION_HEADER_BG_COLOR,
-                    fill_type="solid",
-                )
-                if cell_value:  # Only make bold if there's content
-                    cell.font = Font(bold=True, size=11)
-            else:
-                cell.fill = PatternFill(
-                    start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
-                )
+        # Write data rows
+        for row_num, row_data in enumerate(study_table.rows, 2):
+            # Check if this is a single-cell row (only first cell has content)
+            non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
+            is_section_header = non_empty_cells == 1
 
-    # Auto-adjust column widths
-    for col_num in range(1, len(df.columns) + 1):
-        column_letter = get_column_letter(col_num)
-        max_length = 0
-        for cell in ws[column_letter]:
-            try:
-                if cell.value:
-                    cell_length = min(len(str(cell.value)), 100)
-                    max_length = max(max_length, cell_length)
-            except Exception:
-                pass
-        adjusted_width = min(max_length + 2, 80)
-        ws.column_dimensions[column_letter].width = adjusted_width
+            for col_num, column_name in enumerate(df.columns, 1):
+                cell_value = row_data.get(column_name, "")
+                rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
+                cell = ws.cell(row=row_num, column=col_num)
+                # Only set value if cell is not a merged cell
+                cell.value = rich_text_value  # pyright: ignore[reportAttributeAccessIssue]
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+                cell.border = thin_border
 
-    await asyncio.to_thread(wb.save, output_filename)
+                # Apply background color and font styling
+                if is_section_header:
+                    cell.fill = PatternFill(
+                        start_color=SECTION_HEADER_BG_COLOR,
+                        end_color=SECTION_HEADER_BG_COLOR,
+                        fill_type="solid",
+                    )
+                    if cell_value:  # Only make bold if there's content
+                        cell.font = Font(bold=True, size=11)
+                else:
+                    cell.fill = PatternFill(
+                        start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
+                    )
 
-    ctx.outputs["xlsx_path"] = output_filename
-    set_cached_result(source_id, stage_name, (pdf_path, output_filename))
+        # Auto-adjust column widths
+        for col_num in range(1, len(df.columns) + 1):
+            column_letter = get_column_letter(col_num)
+            max_length = 0
+            for cell in ws[column_letter]:
+                try:
+                    if cell.value:
+                        cell_length = min(len(str(cell.value)), 100)
+                        max_length = max(max_length, cell_length)
+                except Exception:
+                    pass
+            adjusted_width = min(max_length + 2, 80)
+            ws.column_dimensions[column_letter].width = adjusted_width
 
-    # Create artifact immediately
-    from core.models import ArtifactType
+        await asyncio.to_thread(wb.save, output_filename)
 
-    await create_artifact(job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id)
+        ctx.outputs["xlsx_path"] = output_filename
 
-    await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
+        # Create artifact immediately
+        from core.models import ArtifactType
+
+        await create_artifact(
+            job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id
+        )
+
+        await update_job_progress(job_id, stage_name, 1.0, "Spreadsheet generated")
 
     return ctx.to_dict()
 
