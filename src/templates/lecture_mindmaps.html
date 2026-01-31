@@ -1,199 +1,22 @@
-{% extends "base.html" %} {% block title %}{{ lecture.title }} - Mindmaps{% endblock %}
+{% extends "base.html" %} 
+{% load static %}
+{% block title %}{{ lecture.title }} - Mindmaps{% endblock %}
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<style>
-  .mindmaps-container {
-    display: flex;
-    flex-direction: column;
-    padding: 2rem;
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-
-  .mindmaps-header {
-    margin-bottom: 2rem;
-  }
-
-  .mindmaps-header h1 {
-    font-size: 1.5rem;
-    color: #333;
-    margin-bottom: 0.5rem;
-  }
-
-  .mindmaps-header p {
-    color: #6b7280;
-    font-size: 0.875rem;
-  }
-
-  .header-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-
-  .header-actions button,
-  .header-actions a {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 0.875rem;
-    text-decoration: none;
-    color: inherit;
-  }
-
-  .header-actions button:hover,
-  .header-actions a:hover {
-    background: #f5f5f5;
-  }
-
-  .mindmap-options {
-    display: flex;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
-    padding: 1rem;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-  }
-
-  .option-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .option-group label {
-    font-size: 0.875rem;
-    color: #374151;
-    font-weight: 500;
-  }
-
-  .option-group select {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  .mindmaps-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-  }
-
-  .mindmap-card {
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-
-  .mindmap-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
-  }
-
-  .mindmap-card-header h2 {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #374151;
-    margin: 0;
-  }
-
-  .mindmap-card-actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .mindmap-card-actions button {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 0.75rem;
-  }
-
-  .mindmap-card-actions button:hover {
-    background: #f5f5f5;
-  }
-
-  .mindmap-card-body {
-    padding: 1.5rem;
-    overflow: auto;
-    min-height: 400px;
-    transition: background-color 0.3s ease;
-  }
-
-  .mindmap-card-body.dark-bg {
-    background: #1f2937;
-  }
-
-  .mermaid {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-  }
-
-  .mermaid svg {
-    min-width: 600px;
-    min-height: 400px;
-    max-width: none !important;
-  }
-
-  .no-mindmaps {
-    text-align: center;
-    padding: 4rem 2rem;
-    background: #f9fafb;
-    border-radius: 8px;
-  }
-
-  .no-mindmaps i {
-    font-size: 3rem;
-    color: #9ca3af;
-    margin-bottom: 1rem;
-  }
-
-  .no-mindmaps h3 {
-    color: #374151;
-    margin-bottom: 0.5rem;
-  }
-
-  .no-mindmaps p {
-    color: #6b7280;
-  }
-</style>
+<script src="{% static 'js/mindmap-utils.js' %}"></script>
 {% endblock %} {% block body %}
-<div class="mindmaps-container">
+<div class="mindmaps-container" x-data="mindmapsViewer()" x-init="init()">
   <div class="mindmaps-header">
     <h1>🧠 {{ lecture.title }}</h1>
     <p>{{ mindmaps|length }} mindmap{{ mindmaps|pluralize }} generated for this lecture</p>
-    <div class="header-actions">
+    <div class="header-actions mindmap-actions">
       <a href="{% url 'main:index' %}" title="Go back">← Back to Dashboard</a>
     </div>
   </div>
 
   {% if mindmaps %}
   <div class="mindmap-options">
-    <div class="option-group">
-      <label for="theme-select">🎨 Theme:</label>
-      <select id="theme-select" onchange="updateAllDiagrams()">
-        <option value="default">Default</option>
-        <option value="dark">Dark</option>
-        <option value="forest">Forest</option>
-        <option value="neutral">Neutral</option>
-        <option value="base">Base</option>
-      </select>
-    </div>
+    {% include "partials/mindmap_theme_selector.html" %}
   </div>
 
   <div class="mindmaps-grid">
@@ -202,12 +25,12 @@
       <div class="mindmap-card-header">
         <h2>{{ mindmap.title }}</h2>
         <div class="mindmap-card-actions">
-          <button onclick="downloadPNG({{ forloop.counter0 }}, '{{ mindmap.title|escapejs }}')" title="Download as PNG">
+          <button @click="downloadPNG({{ forloop.counter0 }}, '{{ mindmap.title|escapejs }}')" title="Download as PNG">
             🖼️ PNG
           </button>
         </div>
       </div>
-      <div class="mindmap-card-body" id="mindmap-body-{{ forloop.counter0 }}">
+      <div class="mindmap-diagram" :class="{ 'dark-bg': theme === 'dark' }" id="mindmap-body-{{ forloop.counter0 }}">
         <pre class="mermaid" id="mermaid-{{ forloop.counter0 }}">
 {{ mindmap.mermaid_code }}
         </pre>
@@ -225,98 +48,36 @@
 </div>
 
 <script>
-  // Store original mermaid codes
   const mindmapCodes = [
     {% for mindmap in mindmaps %}
     `{{ mindmap.mermaid_code|escapejs }}`,
     {% endfor %}
   ];
 
-  // Initialize Mermaid
-  function initMermaid(theme = "default") {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: theme,
-      mindmap: {
-        padding: 40,
-        useMaxWidth: false,
-      },
-      securityLevel: "loose",
-      flowchart: {
-        useMaxWidth: false,
-      },
-    });
-  }
+  function mindmapsViewer() {
+    return {
+      theme: 'default',
 
-  // Render all diagrams
-  async function renderAllDiagrams() {
-    for (let i = 0; i < mindmapCodes.length; i++) {
-      const mermaidDiv = document.getElementById(`mermaid-${i}`);
-      if (mermaidDiv && mindmapCodes[i]) {
-        try {
-          const { svg } = await mermaid.render(`mindmap-svg-${i}`, mindmapCodes[i]);
-          mermaidDiv.innerHTML = svg;
-        } catch (error) {
-          console.error(`Mermaid rendering error for diagram ${i}:`, error);
-          mermaidDiv.innerHTML = `<pre>${mindmapCodes[i]}</pre>`;
+      async init() {
+        MindmapUtils.initMermaid(this.theme);
+        await this.renderAllDiagrams();
+      },
+
+      async renderAllDiagrams() {
+        for (let i = 0; i < mindmapCodes.length; i++) {
+          await MindmapUtils.renderDiagram(`mermaid-${i}`, mindmapCodes[i], `mindmap-svg-${i}`);
         }
+      },
+
+      async onThemeChange() {
+        MindmapUtils.initMermaid(this.theme);
+        await this.renderAllDiagrams();
+      },
+
+      downloadPNG(index, title) {
+        MindmapUtils.downloadPNG(`#mermaid-${index} svg`, `${title}.png`);
       }
-    }
-  }
-
-  // Update all diagrams with new theme
-  async function updateAllDiagrams() {
-    const theme = document.getElementById("theme-select").value;
-    
-    // Update backgrounds for dark theme
-    document.querySelectorAll(".mindmap-card-body").forEach(body => {
-      if (theme === "dark") {
-        body.classList.add("dark-bg");
-      } else {
-        body.classList.remove("dark-bg");
-      }
-    });
-    
-    initMermaid(theme);
-    await renderAllDiagrams();
-  }
-
-  // Download PNG for a specific mindmap
-  function downloadPNG(index, title) {
-    const svg = document.querySelector(`#mermaid-${index} svg`);
-    if (!svg) {
-      alert("Diagram not rendered yet. Please wait.");
-      return;
-    }
-
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-
-    img.onload = function () {
-      const scale = 2;
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      ctx.scale(scale, scale);
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-
-      const pngUrl = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = pngUrl;
-      a.download = `${title}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
     };
-
-    img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgData)));
   }
-
-  // Initial render
-  initMermaid();
-  renderAllDiagrams();
 </script>
 {% endblock %}

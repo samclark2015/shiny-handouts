@@ -1,160 +1,38 @@
-{% extends "base.html" %} {% block title %}{{ title }} - Mindmap{% endblock %}
+{% extends "base.html" %} 
+{% load static %}
+{% block title %}{{ title }} - Mindmap{% endblock %}
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-<style>
-  .mindmap-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2rem;
-    min-height: calc(100vh - 100px);
-    width: 100%;
-  }
-
-  .mindmap-header {
-    text-align: center;
-    margin-bottom: 1rem;
-  }
-
-  .mindmap-header h1 {
-    font-size: 1.5rem;
-    color: #333;
-    margin-bottom: 0.5rem;
-  }
-
-  .mindmap-actions {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-
-  .mindmap-actions button {
-    padding: 0.5rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 0.875rem;
-  }
-
-  .mindmap-actions button:hover {
-    background: #f5f5f5;
-  }
-
-  .mindmap-options {
-    display: flex;
-    gap: 1.5rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
-    justify-content: center;
-    padding: 1rem;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-  }
-
-  .option-group {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .option-group label {
-    font-size: 0.875rem;
-    color: #374151;
-    font-weight: 500;
-  }
-
-  .option-group select {
-    padding: 0.375rem 0.75rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  .option-group input[type="range"] {
-    width: 100px;
-    cursor: pointer;
-  }
-
-  .option-group .range-value {
-    font-size: 0.75rem;
-    color: #6b7280;
-    min-width: 40px;
-  }
-
-  #mindmap-diagram {
-    background: #fff;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    padding: 2rem;
-    width: 100%;
-    max-width: 100%;
-    overflow: auto;
-    min-height: 600px;
-    transition: background-color 0.3s ease;
-  }
-
-  #mindmap-diagram.dark-bg {
-    background: #1f2937;
-  }
-
-  .mermaid {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    transform-origin: center center;
-    transition: transform 0.2s ease;
-  }
-
-  .mermaid svg {
-    min-width: 800px;
-    min-height: 500px;
-    max-width: none !important;
-  }
-</style>
+<script src="{% static 'js/mindmap-utils.js' %}"></script>
 {% endblock %} {% block body %}
-<div class="mindmap-container">
+<div class="mindmap-container" x-data="mindmapViewer()" x-init="init()">
   <div class="mindmap-header">
     <h1>{{ title }}</h1>
     <div class="mindmap-actions">
-      <button onclick="window.history.back()" title="Go back">← Back</button>
-      <button onclick="downloadPNG()" title="Download as PNG">
+      <button @click="window.history.back()" title="Go back">← Back</button>
+      <button @click="downloadPNG()" title="Download as PNG">
         🖼️ Download PNG
       </button>
     </div>
   </div>
 
-  <div class="mindmap-options">
+  <div class="mindmap-options centered">
+    {% include "partials/mindmap_theme_selector.html" %}
+
     <div class="option-group">
-      <label for="theme-select">🎨 Theme:</label>
-      <select id="theme-select" onchange="updateDiagram()">
-        <option value="default">Default</option>
-        <option value="dark">Dark</option>
-        <option value="forest">Forest</option>
-        <option value="neutral">Neutral</option>
-        <option value="base">Base</option>
-      </select>
+      <label>🔍 Zoom:</label>
+      <input type="range" min="50" max="200" x-model="zoom" step="10" @input="updateZoom()">
+      <span class="range-value" x-text="zoom + '%'"></span>
     </div>
 
     <div class="option-group">
-      <label for="zoom-slider">🔍 Zoom:</label>
-      <input type="range" id="zoom-slider" min="50" max="200" value="100" step="10" oninput="updateZoom(this.value)">
-      <span class="range-value" id="zoom-value">100%</span>
-    </div>
-
-    <div class="option-group">
-      <label for="padding-slider">📏 Padding:</label>
-      <input type="range" id="padding-slider" min="10" max="100" value="40" step="10" oninput="updateDiagram()">
-      <span class="range-value" id="padding-value">40px</span>
+      <label>📏 Padding:</label>
+      <input type="range" min="10" max="100" x-model="padding" step="10" @input="onThemeChange()">
+      <span class="range-value" x-text="padding + 'px'"></span>
     </div>
   </div>
 
-  <div id="mindmap-diagram">
+  <div id="mindmap-diagram" class="mindmap-diagram large" :class="{ 'dark-bg': theme === 'dark' }">
     <pre class="mermaid" id="mermaid-content">
 {{ mermaid_code }}
         </pre
@@ -163,135 +41,35 @@
 </div>
 
 <script>
-  // Store original mermaid code
   const originalMermaidCode = `{{ mermaid_code|escapejs }}`;
+  const mindmapTitle = `{{ title|escapejs }}`;
 
-  // Initialize Mermaid with default settings
-  function initMermaid(theme = "default", padding = 40) {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: theme,
-      mindmap: {
-        padding: padding,
-        useMaxWidth: false,
+  function mindmapViewer() {
+    return {
+      theme: 'default',
+      zoom: 100,
+      padding: 40,
+
+      init() {
+        MindmapUtils.initMermaid(this.theme, this.padding);
+        MindmapUtils.renderDiagram('mermaid-content', originalMermaidCode, 'mindmap-svg')
+          .then(() => this.updateZoom());
       },
-      securityLevel: "loose",
-      flowchart: {
-        useMaxWidth: false,
+
+      async onThemeChange() {
+        MindmapUtils.initMermaid(this.theme, this.padding);
+        await MindmapUtils.renderDiagram('mermaid-content', originalMermaidCode, 'mindmap-svg');
+        this.updateZoom();
       },
-    });
-  }
 
-  // Render the diagram
-  async function renderDiagram() {
-    const container = document.getElementById("mindmap-diagram");
-    const mermaidDiv = document.getElementById("mermaid-content");
-    
-    // Clear existing content
-    mermaidDiv.innerHTML = originalMermaidCode;
-    mermaidDiv.removeAttribute("data-processed");
-    
-    try {
-      const { svg } = await mermaid.render("mindmap-svg", originalMermaidCode);
-      mermaidDiv.innerHTML = svg;
-    } catch (error) {
-      console.error("Mermaid rendering error:", error);
-      mermaidDiv.innerHTML = `<pre>${originalMermaidCode}</pre>`;
-    }
-  }
+      updateZoom() {
+        MindmapUtils.applyZoom('.mermaid', this.zoom);
+      },
 
-  // Update diagram with new settings
-  async function updateDiagram() {
-    const theme = document.getElementById("theme-select").value;
-    const padding = parseInt(document.getElementById("padding-slider").value);
-    
-    // Update padding display
-    document.getElementById("padding-value").textContent = padding + "px";
-    
-    // Update background for dark theme
-    const diagramContainer = document.getElementById("mindmap-diagram");
-    if (theme === "dark") {
-      diagramContainer.classList.add("dark-bg");
-    } else {
-      diagramContainer.classList.remove("dark-bg");
-    }
-    
-    // Reinitialize and render
-    initMermaid(theme, padding);
-    await renderDiagram();
-    
-    // Reapply zoom
-    const zoom = document.getElementById("zoom-slider").value;
-    updateZoom(zoom);
-  }
-
-  // Update zoom level
-  function updateZoom(value) {
-    document.getElementById("zoom-value").textContent = value + "%";
-    const mermaidDiv = document.querySelector(".mermaid");
-    if (mermaidDiv) {
-      mermaidDiv.style.transform = `scale(${value / 100})`;
-    }
-  }
-
-  // Initial render
-  initMermaid();
-  renderDiagram();
-
-  function downloadSVG() {
-    const svg = document.querySelector("#mindmap-diagram svg");
-    if (!svg) {
-      alert("Diagram not rendered yet. Please wait.");
-      return;
-    }
-
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgData], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "{{ title }}.svg";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  function downloadPNG() {
-    const svg = document.querySelector("#mindmap-diagram svg");
-    if (!svg) {
-      alert("Diagram not rendered yet. Please wait.");
-      return;
-    }
-
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    const img = new Image();
-
-    img.onload = function () {
-      // Scale up for better quality
-      const scale = 2;
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-      ctx.scale(scale, scale);
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
-
-      const pngUrl = canvas.toDataURL("image/png");
-      const a = document.createElement("a");
-      a.href = pngUrl;
-      a.download = "{{ title }}.png";
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      downloadPNG() {
+        MindmapUtils.downloadPNG('#mindmap-diagram svg', mindmapTitle + '.png');
+      }
     };
-
-    img.src =
-      "data:image/svg+xml;base64," +
-      btoa(unescape(encodeURIComponent(svgData)));
   }
 </script>
 {% endblock %}

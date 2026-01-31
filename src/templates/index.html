@@ -35,39 +35,46 @@
         <div class="space-y-8">
             
             <!-- Upload Card -->
-            <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="bg-white rounded-lg shadow-md p-6" 
+                 x-data="uploadTabs()" 
+                 x-init="init()">
                 <h2 class="text-xl font-bold text-gray-900 mb-4">Generate a Handout</h2>
                 
                 <!-- Tab Navigation -->
                 <div class="border-b border-gray-200 mb-4">
-                    <nav class="-mb-px flex space-x-8" id="upload-tabs">
+                    <nav class="-mb-px flex space-x-8">
                         <button type="button" 
-                                class="tab-btn border-blue-500 text-blue-600 whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm"
-                                data-tab="upload">
+                                @click="activeTab = 'upload'"
+                                :class="activeTab === 'upload' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
                             Upload File
                         </button>
                         <button type="button"
-                                class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm"
-                                data-tab="url">
+                                @click="activeTab = 'url'"
+                                :class="activeTab === 'url' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
                             Video URL
                         </button>
                         <button type="button"
-                                id="panopto-tab-btn"
-                                class="tab-btn border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm"
-                                data-tab="panopto">
+                                x-show="hasPanopto"
+                                @click="activeTab = 'panopto'"
+                                :class="activeTab === 'panopto' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
                             Panopto
                         </button>
                     </nav>
                 </div>
                 
                 <!-- Upload Tab -->
-                <div id="tab-upload" class="tab-content">
+                <div x-show="activeTab === 'upload'">
                     <form hx-post="{% url 'api:upload_file' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
-                          hx-on::after-request="htmx.trigger('body', 'newJob')"
+                          hx-on::after-request="if(event.detail.successful) { this.reset(); $dispatch('file-reset'); htmx.trigger('body', 'newJob'); }"
                           hx-encoding="multipart/form-data"
-                          class="space-y-4">
+                          class="space-y-4"
+                          x-data="{ fileName: '', hasFile: false }"
+                          @file-reset.window="fileName = ''; hasFile = false">
                         {% csrf_token %}
                         
                         <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
@@ -76,7 +83,8 @@
                                    id="file-upload"
                                    accept=".mp4,.mov,.avi,.mkv"
                                    class="hidden"
-                                   required>
+                                   required
+                                   @change="fileName = $event.target.files[0]?.name || ''; hasFile = $event.target.files.length > 0">
                             <label for="file-upload" class="cursor-pointer">
                                 <i class="fa-solid fa-cloud-arrow-up mx-auto text-5xl text-gray-400"></i>
                                 <p class="mt-2 text-sm text-gray-600">
@@ -84,15 +92,14 @@
                                 </p>
                                 <p class="text-xs text-gray-500">MP4, MOV, AVI, MKV up to 2GB</p>
                             </label>
-                            <p id="file-name" class="mt-2 text-sm text-gray-800 font-medium hidden"></p>
+                            <p x-show="hasFile" x-text="fileName" class="mt-2 text-sm text-gray-800 font-medium"></p>
                         </div>
                         
                         {% include "partials/output_options.html" %}
                         
                         <button type="submit" 
                                 class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                id="upload-btn"
-                                disabled>
+                                :disabled="!hasFile">
                             <span class="htmx-indicator">
                                 <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
                             </span>
@@ -102,7 +109,7 @@
                 </div>
                 
                 <!-- URL Tab -->
-                <div id="tab-url" class="tab-content hidden">
+                <div x-show="activeTab === 'url'" style="display: none;">
                     <form hx-post="{% url 'api:process_url' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
@@ -133,24 +140,23 @@
                 </div>
                 
                 <!-- Panopto Tab -->
-                <div id="tab-panopto" class="tab-content hidden">
+                <div x-show="activeTab === 'panopto'" style="display: none;">
                     <form hx-post="{% url 'api:process_panopto' %}"
                           hx-target="#job-list"
                           hx-swap="afterbegin"
-                          hx-on::after-request="htmx.trigger('body', 'newJob')"
-                          class="space-y-4"
-                          id="panopto-form">
+                          hx-on::after-request="if(event.detail.successful) { window.location.href = window.location.pathname; }"
+                          class="space-y-4">
                         {% csrf_token %}
                         
-                        <input type="hidden" name="url" id="panopto-url-hidden">
-                        <input type="hidden" name="cookie" id="panopto-cookie-hidden">
+                        <input type="hidden" name="url" :value="panoptoUrl">
+                        <input type="hidden" name="cookie" :value="panoptoCookie">
                         
                         <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
                             <div class="flex items-start">
                                 <i class="fa-solid fa-video text-blue-600 mt-1 mr-3"></i>
                                 <div class="flex-1">
                                     <h3 class="text-sm font-medium text-blue-900 mb-1">Panopto Lecture Supplied</h3>
-                                    <p class="text-sm text-blue-700" id="panopto-url-display">Loading...</p>
+                                    <p class="text-sm text-blue-700" x-text="panoptoUrl || 'Loading...'"></p>
                                 </div>
                             </div>
                         </div>
@@ -158,9 +164,8 @@
                         {% include "partials/output_options.html" %}
                         
                         <button type="submit" 
-                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors"
-                                id="panopto-submit-btn"
-                                disabled>
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                :disabled="!hasPanopto">
                             <span class="htmx-indicator">
                                 <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
                             </span>
@@ -222,26 +227,21 @@
 
 {% block scripts %}
 <script>
-    // Preserve file browser collapse state across HTMX updates
+    // File browser state preservation for HTMX updates
     let fileBrowserState = new Set();
     
     document.body.addEventListener('htmx:beforeSwap', (event) => {
         if (event.detail.target.id === 'file-browser') {
-            // Save which details elements are open
             fileBrowserState.clear();
             event.detail.target.querySelectorAll('details[open]').forEach(details => {
-                // Use summary text as identifier
                 const summary = details.querySelector('summary');
-                if (summary) {
-                    fileBrowserState.add(summary.textContent.trim());
-                }
+                if (summary) fileBrowserState.add(summary.textContent.trim());
             });
         }
     });
     
     document.body.addEventListener('htmx:afterSwap', (event) => {
         if (event.detail.target.id === 'file-browser') {
-            // Restore open state
             event.detail.target.querySelectorAll('details').forEach(details => {
                 const summary = details.querySelector('summary');
                 if (summary && fileBrowserState.has(summary.textContent.trim())) {
@@ -250,86 +250,28 @@
             });
         }
     });
-    
-    // Tab switching
-    function switchTab(tabName) {
-        // Update tab buttons
-        document.querySelectorAll('.tab-btn').forEach(b => {
-            b.classList.remove('border-blue-500', 'text-blue-600');
-            b.classList.add('border-transparent', 'text-gray-500');
-        });
-        const activeBtn = document.querySelector(`[data-tab="${tabName}"]`);
-        if (activeBtn) {
-            activeBtn.classList.remove('border-transparent', 'text-gray-500');
-            activeBtn.classList.add('border-blue-500', 'text-blue-600');
-        }
-        
-        // Show/hide tab content
-        document.querySelectorAll('.tab-content').forEach(content => {
-            content.classList.add('hidden');
-        });
-        document.getElementById('tab-' + tabName).classList.remove('hidden');
-    }
-    
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            switchTab(btn.dataset.tab);
-        });
-    });
-    
-    // Check for Panopto query parameters
-    const urlParams = new URLSearchParams(window.location.search);
-    const panoptoUrl = urlParams.get('url');
-    const panoptoCookie = urlParams.get('cookie');
-    
-    if (panoptoUrl && panoptoCookie) {
-        // Populate hidden fields
-        document.getElementById('panopto-url-hidden').value = panoptoUrl;
-        document.getElementById('panopto-cookie-hidden').value = panoptoCookie;
-        
-        // Display the URL
-        document.getElementById('panopto-url-display').textContent = panoptoUrl;
-        
-        // Enable submit button
-        document.getElementById('panopto-submit-btn').disabled = false;
-        
-        // Switch to Panopto tab
-        switchTab('panopto');
-    } else {
-        document.getElementById('panopto-tab-btn').classList.add('hidden');
-    }
-    
-    // File upload handling
-    const fileInput = document.getElementById('file-upload');
-    const fileName = document.getElementById('file-name');
-    const uploadBtn = document.getElementById('upload-btn');
-    
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            fileName.textContent = e.target.files[0].name;
-            fileName.classList.remove('hidden');
-            uploadBtn.disabled = false;
-        } else {
-            fileName.classList.add('hidden');
-            uploadBtn.disabled = true;
-        }
-    });
-    
-    // Reset file input after successful upload
-    document.body.addEventListener('htmx:afterRequest', (e) => {
-        if (e.detail.elt.closest('form')?.querySelector('#file-upload')) {
-            if (e.detail.successful) {
-                fileInput.value = '';
-                fileName.classList.add('hidden');
-                uploadBtn.disabled = true;
+
+    // Alpine component for upload tabs
+    function uploadTabs() {
+        return {
+            activeTab: 'upload',
+            hasPanopto: false,
+            panoptoUrl: '',
+            panoptoCookie: '',
+            
+            init() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const url = urlParams.get('url');
+                const cookie = urlParams.get('cookie');
+                
+                if (url && cookie) {
+                    this.hasPanopto = true;
+                    this.panoptoUrl = url;
+                    this.panoptoCookie = cookie;
+                    this.activeTab = 'panopto';
+                }
             }
-        }
-        
-        // Clear Panopto info after successful submission
-        if (e.detail.elt.id === 'panopto-form' && e.detail.successful) {
-            // Navigate to page without query parameters
-            window.location.href = window.location.pathname;
-        }
-    });
+        };
+    }
 </script>
 {% endblock %}
