@@ -9,14 +9,17 @@ Converts the pipeline stages into Taskiq tasks with:
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import subprocess
 import tempfile
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from tempfile import TemporaryDirectory
+from typing import cast
 from urllib.parse import urljoin
 from uuid import uuid4
 
@@ -160,12 +163,20 @@ class TaskContext:
     vignette_prompt: str | None = None
     spreadsheet_prompt: str | None = None
     spreadsheet_columns: list[dict] | None = None
+
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "TaskContext":
         return cls(**data)
+
+    def update_from(self, other: "TaskContext") -> None:
+        """Update this instance with non-None values from another instance."""
+        for field in self.__dataclass_fields__:
+            other_value = getattr(other, field)
+            if other_value is not None:
+                setattr(self, field, other_value)
 
     def get_video_path(self) -> str:
         """Get the path to the video file."""
@@ -371,6 +382,34 @@ async def mark_job_completed(job_id: int, outputs: dict) -> None:
         pass
 
 
+@contextmanager
+def cache_context(ctx: TaskContext, stage_name: str):
+    """Context manager for stage-level caching.
+
+    Yields the cached context if available, otherwise yields None.
+    On exit, stores the context in the cache.
+
+    Usage:
+        with cache_context(ctx, stage_name) as cached:
+            if cached:
+                return cached.to_dict()
+            # ... do work ...
+    """
+    cache = CacheContext(ctx.source_id)
+
+    # Check cache on entry
+    cached = cache.get(stage_name)
+    if cached:
+        # If we hit cache, update ctx
+        logging.info(f"Cache hit for stage {stage_name}, loading cached data {cached}")
+        ctx.update_from(TaskContext.from_dict(cached))
+    else:
+        yield
+
+        # Store in cache on exit
+        cache.set(stage_name, ctx.to_dict())
+
+
 # Worker lifecycle events
 
 
@@ -395,15 +434,12 @@ async def on_worker_shutdown(state):
 
 # Pipeline stage tasks
 
+
 @broker.task
 async def generate_context_task(job_id: int, input_type: str, input_data: str) -> dict:
     """Generate processing context from input."""
     from accounts.models import UserSettings
     from core.models import Job
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     stage_name = "generate_context"
 
@@ -460,42 +496,30 @@ async def download_video_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "download_video"
-    cache = CacheContext(ctx.source_id)
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Checking video")
 
     # Check cache first
-    cached = cache.get(stage_name)
-    if cached and os.path.exists(cached.get("video_path", "")):
-        ctx.video_path = cached["video_path"]
-        await update_job_progress(job_id, stage_name, 1.0, "Using cached video")
-        return ctx.to_dict()
+    with cache_context(ctx, stage_name):
+        video_path = ctx.get_video_path()
 
-    video_path = ctx.get_video_path()
+        if ctx.input_type == "upload":
+            upload_path = ctx.input_data.get("path", "")
+            if os.path.exists(upload_path):
+                ctx.video_path = upload_path
+                await update_job_progress(job_id, stage_name, 1.0, "Video ready")
+                return ctx.to_dict()
 
-    if ctx.input_type == "upload":
-        upload_path = ctx.input_data.get("path", "")
-        if os.path.exists(upload_path):
-            ctx.video_path = upload_path
-            cache.set(stage_name, {"video_path": upload_path})
-            await update_job_progress(job_id, stage_name, 1.0, "Video ready")
-            return ctx.to_dict()
-
-    if ctx.input_type == "panopto":
-        await _download_panopto_video(job_id, stage_name, ctx.input_data, video_path)
-    else:
-        video_url = ctx.input_data.get("url", "")
-        if _is_m3u8_url(video_url):
-            await _download_m3u8_stream(job_id, stage_name, video_url, video_path)
+        if ctx.input_type == "panopto":
+            await _download_panopto_video(job_id, stage_name, ctx.input_data, video_path)
         else:
-            await _download_regular_video(job_id, stage_name, video_url, video_path)
+            video_url = ctx.input_data.get("url", "")
+            if _is_m3u8_url(video_url):
+                await _download_m3u8_stream(job_id, stage_name, video_url, video_path)
+            else:
+                await _download_regular_video(job_id, stage_name, video_url, video_path)
 
-    ctx.video_path = video_path
-    cache.set(stage_name, {"video_path": video_path})
+        ctx.video_path = video_path
 
     await update_job_progress(job_id, stage_name, 1.0, "Video downloaded")
 
@@ -508,27 +532,12 @@ async def extract_captions_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "extract_captions"
-    cache = CacheContext(ctx.source_id)
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Extracting captions")
 
-    # Check cache first
-    cached = cache.get(stage_name)
-    if cached is not None:
-        ctx.captions = cached
-        await update_job_progress(job_id, stage_name, 1.0, "Using cached captions")
-        return ctx.to_dict()
-
-    await update_job_progress(job_id, stage_name, 0.1, "Transcribing audio")
-
-    captions = await generate_captions(ctx.get_video_path())
-    ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
-
-    cache.set(stage_name, ctx.captions)
+    with cache_context(ctx, stage_name):
+        captions = await generate_captions(ctx.get_video_path())
+        ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
 
     await update_job_progress(job_id, stage_name, 1.0, "Captions extracted")
 
@@ -541,77 +550,66 @@ async def match_frames_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "match_frames"
-    cache = CacheContext(ctx.source_id)
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Matching frames")
 
     # Check cache first
-    cached = cache.get(stage_name)
-    if cached is not None:
-        slides = cached
-        if all(os.path.exists(s["image"]) for s in slides):
-            ctx.slides = slides
-            await update_job_progress(job_id, stage_name, 1.0, "Using cached slides")
+    with cache_context(ctx, stage_name):
+        if not ctx.captions:
+            ctx.slides = []
             return ctx.to_dict()
 
-    if not ctx.captions:
-        ctx.slides = []
-        return ctx.to_dict()
+        captions = [Caption(**c) for c in ctx.captions]
+        last_frame = None
+        last_frame_gs = None
+        cum_captions = []
+        pairs = []
 
-    captions = [Caption(**c) for c in ctx.captions]
-    last_frame = None
-    last_frame_gs = None
-    cum_captions = []
-    pairs = []
+        stream = cv2.VideoCapture()
+        stream.open(ctx.get_video_path())
 
-    stream = cv2.VideoCapture()
-    stream.open(ctx.get_video_path())
+        frame_path = os.path.join(FRAMES_DIR, ctx.source_id)
+        os.makedirs(frame_path, exist_ok=True)
 
-    frame_path = os.path.join(FRAMES_DIR, ctx.source_id)
-    os.makedirs(frame_path, exist_ok=True)
+        for idx, cap in enumerate(captions):
+            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_000 + 500)
+            ret, frame = stream.read()
+            if not ret:
+                continue
 
-    for idx, cap in enumerate(captions):
-        stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_000 + 500)
-        ret, frame = stream.read()
-        if not ret:
-            continue
+            frame_gs = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if last_frame is None:
+                last_frame = frame
+                last_frame_gs = frame_gs
+                cum_captions.append(cap.text)
+                continue
 
-        frame_gs = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if last_frame is None:
-            last_frame = frame
-            last_frame_gs = frame_gs
+            similarity_result = ski.metrics.structural_similarity(
+                last_frame_gs, frame_gs, full=False
+            )
+            score = (
+                similarity_result
+                if isinstance(similarity_result, (int, float))
+                else similarity_result[0]
+            )
+
+            if score < 0.925 or (idx + 1) == len(captions):
+                cap_full = " ".join(cum_captions)
+                image_path = os.path.join(frame_path, f"{uuid4()}.png")
+                cv2.imwrite(image_path, last_frame)
+
+                pairs.append({"image": image_path, "caption": cap_full, "extra": None})
+                last_frame = frame
+                last_frame_gs = frame_gs
+                cum_captions.clear()
+
+                progress = (idx + 1) / len(captions)
+                await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
+
             cum_captions.append(cap.text)
-            continue
 
-        similarity_result = ski.metrics.structural_similarity(last_frame_gs, frame_gs, full=False)
-        score = (
-            similarity_result
-            if isinstance(similarity_result, (int, float))
-            else similarity_result[0]
-        )
-
-        if score < 0.925 or (idx + 1) == len(captions):
-            cap_full = " ".join(cum_captions)
-            image_path = os.path.join(frame_path, f"{uuid4()}.png")
-            cv2.imwrite(image_path, last_frame)
-
-            pairs.append({"image": image_path, "caption": cap_full, "extra": None})
-            last_frame = frame
-            last_frame_gs = frame_gs
-            cum_captions.clear()
-
-            progress = (idx + 1) / len(captions)
-            await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
-
-        cum_captions.append(cap.text)
-
-    stream.release()
-    ctx.slides = pairs
-    cache.set(stage_name, pairs)
+        stream.release()
+        ctx.slides = pairs
 
     await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
 
@@ -624,11 +622,6 @@ async def transform_slides_ai_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "transform_slides_with_ai"
-    cache = CacheContext(ctx.source_id)
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Transforming slides with AI")
 
@@ -636,32 +629,25 @@ async def transform_slides_ai_task(data: dict) -> dict:
         return ctx.to_dict()
 
     # Check cache first
-    cached = cache.get(stage_name)
-    if cached is not None:
-        slides = cached
-        if all(os.path.exists(s["image"]) for s in slides):
-            ctx.slides = slides
-            await update_job_progress(job_id, stage_name, 1.0, "Using cached AI slides")
-            return ctx.to_dict()
+    with cache_context(ctx, stage_name):
+        output = []
+        slides = cast(list[dict], ctx.slides)
+        total = len(slides)
 
-    output = []
-    total = len(ctx.slides)
+        for idx, slide in enumerate(slides):
+            cleaned = await clean_transcript(slide["caption"])
+            output.append(
+                {
+                    "image": slide["image"],
+                    "caption": cleaned,
+                    "extra": slide.get("extra"),
+                }
+            )
 
-    for idx, slide in enumerate(ctx.slides):
-        cleaned = await clean_transcript(slide["caption"])
-        output.append(
-            {
-                "image": slide["image"],
-                "caption": cleaned,
-                "extra": slide.get("extra"),
-            }
-        )
+            progress = (idx + 1) / total
+            await update_job_progress(job_id, stage_name, progress * 0.9, "Cleaning transcript")
 
-        progress = (idx + 1) / total
-        await update_job_progress(job_id, stage_name, progress * 0.9, "Cleaning transcript")
-
-    ctx.slides = output
-    cache.set(stage_name, output)
+        ctx.slides = output
 
     await update_job_progress(job_id, stage_name, 1.0, "Slides transformed")
 
@@ -674,47 +660,35 @@ async def generate_output_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "generate_output"
-    cache = CacheContext(ctx.source_id)
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Generating PDF")
 
     # Check cache first
-    cached = cache.get(stage_name)
-    if cached and os.path.exists(cached):
+    with cache_context(ctx, stage_name):
+        # Convert slide dicts back to Slide namedtuples for template
+        slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
+
+        template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
+        env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
+        template = env.get_template("template.html")
+        html = template.render(pairs=slides)
+
+        await update_job_progress(job_id, stage_name, 0.3, "Generating title")
+        title = await generate_title(html)
+        await update_job_label(job_id, title)
+
+        path = os.path.join(OUT_DIR, f"{title}.pdf")
+        os.makedirs(OUT_DIR, exist_ok=True)
+
+        await update_job_progress(job_id, stage_name, 0.5, "Creating PDF")
+        with open(path, "wb") as f:
+            pisa_status = pisa.CreatePDF(html, dest=f)
+            if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+                raise ValueError("Error generating PDF")
+
         ctx.outputs = ctx.outputs or {}
-        ctx.outputs["pdf_path"] = cached
-        await update_job_progress(job_id, stage_name, 1.0, "Using cached PDF")
-        return ctx.to_dict()
-
-    # Convert slide dicts back to Slide namedtuples for template
-    slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
-
-    template_path = os.path.join(os.path.dirname(__file__), "..", "templates", "pdf")
-    env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
-    template = env.get_template("template.html")
-    html = template.render(pairs=slides)
-
-    await update_job_progress(job_id, stage_name, 0.3, "Generating title")
-    title = await generate_title(html)
-    await update_job_label(job_id, title)
-
-    path = os.path.join(OUT_DIR, f"{title}.pdf")
-    os.makedirs(OUT_DIR, exist_ok=True)
-
-    await update_job_progress(job_id, stage_name, 0.5, "Creating PDF")
-    with open(path, "wb") as f:
-        pisa_status = pisa.CreatePDF(html, dest=f)
-        if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
-            raise ValueError("Error generating PDF")
-
-    cache.set(stage_name, path)
-    ctx.outputs = ctx.outputs or {}
-    ctx.outputs["pdf_path"] = path
-    ctx.outputs["source_id"] = ctx.source_id
+        ctx.outputs["pdf_path"] = path
+        ctx.outputs["source_id"] = ctx.source_id
 
     await update_job_progress(job_id, stage_name, 1.0, "PDF generated")
 
@@ -727,10 +701,6 @@ async def compress_pdf_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "compress_pdf"
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     await update_job_progress(job_id, stage_name, 0, "Compressing PDF")
 
@@ -783,10 +753,6 @@ async def generate_spreadsheet_task(data: dict) -> dict:
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "generate_spreadsheet"
-
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     # Skip if Excel generation is disabled
     if not ctx.enable_excel:
@@ -923,10 +889,6 @@ async def generate_vignette_task(data: dict) -> dict:
     job_id = ctx.job_id
     stage_name = "generate_vignette_pdf"
 
-    # Check for cancellation
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
-
     # Skip if vignette generation is disabled
     if not ctx.enable_vignette:
         await update_job_progress(job_id, stage_name, 1.0, "Vignette generation skipped")
@@ -940,15 +902,6 @@ async def generate_vignette_task(data: dict) -> dict:
     pdf_path = ctx.outputs.get("pdf_path")
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
-
-    # source_id = data.get("source_id", "")
-    # cached = get_cached_result(source_id, stage_name)
-    # if cached:
-    #     _, _, vignette_path = cached
-    #     if os.path.exists(vignette_path):
-    #         ctx.outputs["vignette_path"] = vignette_path
-    #         await update_job_progress(job_id, stage_name, 1.0, "Using cached vignette")
-    #         return ctx.to_dict()
 
     await update_job_progress(job_id, stage_name, 0.2, "Generating questions")
     vignette_data = await generate_vignette_questions(
@@ -977,8 +930,6 @@ async def generate_vignette_task(data: dict) -> dict:
             raise ValueError("Error generating vignette PDF")
 
     ctx.outputs["vignette_path"] = vignette_pdf_path
-    xlsx_path = ctx.outputs.get("xlsx_path", "")
-    set_cached_result(source_id, stage_name, (pdf_path, xlsx_path, vignette_pdf_path))
 
     # Create artifact immediately
     from core.models import ArtifactType
@@ -995,10 +946,6 @@ async def finalize_job_task(data: dict) -> dict:
     """Finalize the job and create database records."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
-
-    # Check for cancellation - don't finalize cancelled jobs
-    if await check_job_cancelled(job_id):
-        raise JobCancelledException(f"Job {job_id} was cancelled")
 
     outputs = ctx.outputs or {}
     outputs["source_id"] = ctx.source_id

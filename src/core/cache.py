@@ -15,7 +15,7 @@ import redis
 REDIS_CACHE_URL = os.environ.get("REDIS_CACHE_URL", "redis://localhost:6379/1")
 
 # Global Redis client instance
-_redis_client: Optional[redis.Redis] = None
+_redis_client: redis.Redis | None = None
 
 # Cache expiration time (7 days)
 CACHE_EXPIRY = 60 * 60 * 24 * 7
@@ -43,7 +43,7 @@ def _generate_cache_key(source_id: str, stage_name: str) -> str:
     return hashlib.sha256(key_data.encode()).hexdigest()
 
 
-def get_cached_result(source_id: str, stage_name: str) -> Optional[Any]:
+def get_cached_result(source_id: str, stage_name: str) -> Any | None:
     """
     Retrieve a cached result for a specific stage.
 
@@ -141,7 +141,7 @@ def _generate_ai_cache_key(func_name: str, *args, **kwargs) -> str:
     return hashlib.sha256(key_data.encode()).hexdigest()
 
 
-def get_ai_cached_result(func_name: str, *args, **kwargs) -> Optional[Any]:
+def get_ai_cached_result(func_name: str, *args, **kwargs) -> Any | None:
     """
     Retrieve a cached result for an AI function call.
 
@@ -192,7 +192,7 @@ class CacheContext:
     def __init__(self, source_id: str):
         self.source_id = source_id
 
-    def get(self, stage_name: str) -> Optional[Any]:
+    def get(self, stage_name: str) -> Any | None:
         """Get a cached result for a stage."""
         return get_cached_result(self.source_id, stage_name)
 
