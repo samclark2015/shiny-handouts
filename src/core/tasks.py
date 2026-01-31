@@ -633,7 +633,11 @@ async def match_frames_task(data: dict) -> dict:
             if not ret:
                 continue
 
-            frame_gs = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # Downscale frame for comparison (Option 1: faster SSIM)
+            scale_factor = 0.5
+            frame_small = cv2.resize(frame, None, fx=scale_factor, fy=scale_factor)
+            frame_gs = cv2.cvtColor(frame_small, cv2.COLOR_BGR2GRAY)
+
             if last_frame is None:
                 last_frame = frame
                 last_frame_gs = frame_gs
@@ -651,8 +655,9 @@ async def match_frames_task(data: dict) -> dict:
 
             if score < 0.925 or (idx + 1) == len(captions):
                 cap_full = " ".join(cum_captions)
-                image_path = os.path.join(frame_path, f"{uuid4()}.png")
-                cv2.imwrite(image_path, last_frame)
+                # Option 4: Use JPEG format for faster I/O
+                image_path = os.path.join(frame_path, f"{uuid4()}.jpg")
+                cv2.imwrite(image_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
                 pairs.append({"image": image_path, "caption": cap_full, "extra": None})
                 last_frame = frame
