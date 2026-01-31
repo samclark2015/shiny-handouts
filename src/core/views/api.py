@@ -1,12 +1,12 @@
 """API views for HTMX interactions."""
 
+import base64
 import json
 import os
 import time
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
-import base64
 
 import jwt
 import requests
@@ -18,6 +18,7 @@ from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+
 from core.models import Job, JobStatus, Lecture
 
 APP_ID = os.getenv("GITHUB_APP_ID", "")
@@ -330,7 +331,6 @@ def job_progress(request, job_id: int):
     def event_stream() -> Generator[str, None, None]:
         """Generate SSE events from Redis pub/sub."""
         import redis
-import base64
 
         redis_client = redis.from_url(settings.REDIS_URL)
         pubsub = redis_client.pubsub()
@@ -514,4 +514,5 @@ def submit_bug_report(request):
             {"message": result["message"], "issue_url": result.get("issue_url")},
         )
     except Exception as e:
+        return render(request, "partials/bug_report_error.html", {"error": str(e)}, status=500)
         return render(request, "partials/bug_report_error.html", {"error": str(e)}, status=500)
