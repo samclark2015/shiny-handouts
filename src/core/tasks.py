@@ -29,7 +29,7 @@ import skimage as ski
 from django.conf import settings
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Font
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from taskiq import TaskiqEvents
 from taskiq_pipelines import Pipeline, PipelineMiddleware
@@ -699,6 +699,20 @@ async def generate_spreadsheet_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0.6, "Writing Excel file")
 
+    # Style constants - modify these to change colors
+    HEADER_BG_COLOR = "D3D3D3"  # Light grey
+    CELL_BG_COLOR = "ADD8E6"  # Baby blue
+    SECTION_HEADER_BG_COLOR = "6CB4E8"  # Darker blue for single-cell rows
+    BORDER_COLOR = "000000"  # Black
+
+    # Create border style
+    thin_border = Border(
+        left=Side(style="thin", color=BORDER_COLOR),
+        right=Side(style="thin", color=BORDER_COLOR),
+        top=Side(style="thin", color=BORDER_COLOR),
+        bottom=Side(style="thin", color=BORDER_COLOR),
+    )
+
     wb = Workbook()
     ws = wb.active
     assert ws is not None
@@ -710,15 +724,38 @@ async def generate_spreadsheet_task(data: dict) -> dict:
         cell = ws.cell(row=1, column=col_num, value=column_name)
         cell.font = Font(bold=True, size=11)
         cell.alignment = Alignment(wrap_text=True, vertical="top")
+        cell.fill = PatternFill(
+            start_color=HEADER_BG_COLOR, end_color=HEADER_BG_COLOR, fill_type="solid"
+        )
+        cell.border = thin_border
 
     # Write data rows
     for row_num, row_data in enumerate(rows, 2):
+        # Check if this is a single-cell row (only first cell has content)
+        non_empty_cells = sum(1 for col_name in df.columns if row_data.get(col_name, ""))
+        is_section_header = non_empty_cells == 1
+
         for col_num, column_name in enumerate(df.columns, 1):
             cell_value = row_data.get(column_name, "")
             rich_text_value = parse_markdown_bold_to_rich_text(cell_value)
             cell = ws.cell(row=row_num, column=col_num)
             cell.value = rich_text_value
             cell.alignment = Alignment(wrap_text=True, vertical="top")
+            cell.border = thin_border
+
+            # Apply background color and font styling
+            if is_section_header:
+                cell.fill = PatternFill(
+                    start_color=SECTION_HEADER_BG_COLOR,
+                    end_color=SECTION_HEADER_BG_COLOR,
+                    fill_type="solid",
+                )
+                if cell_value:  # Only make bold if there's content
+                    cell.font = Font(bold=True, size=11)
+            else:
+                cell.fill = PatternFill(
+                    start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
+                )
 
     # Auto-adjust column widths
     for col_num in range(1, len(df.columns) + 1):
