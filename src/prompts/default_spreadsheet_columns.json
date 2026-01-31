@@ -66,5 +66,9 @@
     {
         "name": "Key Etymology",
         "description": "Etymology of disease name and key terms"
+    },
+    {
+        "name": "Common Med Student Misconceptions / Confusion",
+        "description": "Common misconceptions and points of confusion among medical students"
     }
 ]
