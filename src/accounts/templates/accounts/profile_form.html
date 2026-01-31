@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} Setting Profile{% endblock %}
+{% block title %}{% if is_edit %}Edit{% else %}Create{% endif %} Course Profile{% endblock %}
 
 {% block body %}
 <header class="bg-white shadow-sm">
     <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
         <h1 class="text-2xl font-bold text-gray-900">
-            {% if is_edit %}Edit{% else %}Create{% endif %} Setting Profile
+            {% if is_edit %}Edit{% else %}Create{% endif %} Course Profile
         </h1>
         <div class="flex items-center space-x-4">
             <a href="{% url 'auth:profiles' %}" class="text-sm text-blue-600 hover:text-blue-800">

@@ -1,15 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Setting Profiles{% endblock %}
+{% block title %}Course Profiles{% endblock %}
 
 {% block body %}
 <header class="bg-white shadow-sm">
     <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-gray-900">Setting Profiles</h1>
+        <h1 class="text-2xl font-bold text-gray-900">Course Profiles</h1>
         <div class="flex items-center space-x-4">
-            <a href="{% url 'auth:settings' %}" class="text-sm text-blue-600 hover:text-blue-800">
-                <i class="fa-solid fa-gear mr-1"></i>Global Settings
-            </a>
             <a href="{% url 'main:index' %}" class="text-sm text-blue-600 hover:text-blue-800">Back to Dashboard</a>
             <a href="{% url 'account_logout' %}"
                 class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
@@ -33,7 +30,7 @@
     <div class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
         <p class="text-sm text-blue-800">
             <i class="fa-solid fa-info-circle mr-2"></i>
-            <strong>Setting Profiles</strong> let you create different configurations for different lecture types. 
+            <strong>Course Profiles</strong> let you create different configurations for different lecture types. 
             Each profile can have custom prompts and spreadsheet columns tailored to specific subjects (e.g., Pathology, Cardiology, Anatomy).
         </p>
     </div>
@@ -85,7 +82,7 @@
 
             <div class="space-y-2 text-sm text-gray-600">
                 <div class="flex items-start">
-                    <i class="fa-solid fa-message-question w-5 mr-2 mt-0.5 text-gray-400"></i>
+                    <i class="fa-solid fa-circle-question w-5 mr-2 mt-0.5 text-gray-400"></i>
                     <span>
                         {% if profile.vignette_prompt %}
                         Custom vignette prompt
@@ -105,7 +102,7 @@
                     </span>
                 </div>
                 <div class="flex items-start">
-                    <i class="fa-solid fa-columns w-5 mr-2 mt-0.5 text-gray-400"></i>
+                    <i class="fa-solid fa-table-columns w-5 mr-2 mt-0.5 text-gray-400"></i>
                     <span>
                         {{ profile.spreadsheet_columns|length }} spreadsheet columns
                     </span>
@@ -119,7 +116,7 @@
         <i class="fa-solid fa-folder-open text-5xl text-gray-300 mb-4"></i>
         <h3 class="text-lg font-medium text-gray-900 mb-2">No profiles yet</h3>
         <p class="text-gray-600 mb-4">
-            Create your first setting profile to customize prompts and columns for specific lecture types.
+            Create your first course profile to customize prompts and columns for specific lecture types.
         </p>
         <a href="{% url 'auth:profile_create' %}"
             class="inline-flex items-center bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-md font-medium transition-colors">

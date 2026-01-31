@@ -4,6 +4,8 @@
 
 Setting Profiles allow users to create multiple named configurations for different lecture types or courses. Each profile can have custom prompts and spreadsheet columns tailored to specific subjects (e.g., Pathology, Cardiology, Anatomy).
 
+**Note:** The old `UserSettings` model has been removed. All settings are now managed through SettingProfile.
+
 ## Implementation Summary
 
 ### Models
@@ -94,13 +96,14 @@ New URL patterns in `accounts/urls.py`:
 
 1. **accounts/0004_settingprofile.py**: Creates SettingProfile table
 2. **core/0004_job_setting_profile.py**: Adds setting_profile FK to Job
+3. **accounts/0005_remove_usersettings.py**: Removes deprecated UserSettings table
 
 ## Usage
 
 ### For Users
 
 1. **Create a Profile:**
-   - Navigate to Settings → Setting Profiles
+   - Navigate to Profiles (from dashboard header)
    - Click "Create New Profile"
    - Enter a name (e.g., "Pathology")
    - Optionally customize prompts and columns
@@ -116,6 +119,8 @@ New URL patterns in `accounts/urls.py`:
    - Delete: Click delete icon and confirm
    - Set Default: Check "Set as default" in edit form
 
+**Important:** Every job should use a profile. If no profile is selected during generation, the job will use system defaults.
+
 ### For Developers
 
 #### Accessing Profile Settings in Tasks
@@ -128,8 +133,10 @@ if job.setting_profile:
     spreadsheet_prompt = job.setting_profile.get_spreadsheet_prompt()
     columns = job.setting_profile.get_spreadsheet_columns()
 else:
-    # Use default settings or UserSettings
-    pass
+    # No profile - use system defaults
+    vignette_prompt = None
+    spreadsheet_prompt = None
+    columns = None
 ```
 
 #### Creating a Profile Programmatically
