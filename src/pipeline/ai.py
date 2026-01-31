@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import os
 import sys
 from functools import wraps
@@ -37,15 +38,14 @@ def ai_checkpoint(func):
     @wraps(func)
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
-
         # Try to get cached result
         cached = get_ai_cached_result(func_name, *args, **kwargs)
         if cached is not None:
-            print(f"[AI Checkpoint] Using cached result for {func_name}")
+            logging.info(f"[AI Checkpoint] Using cached result for {func_name}")
             return cached
 
         # Execute the function and cache the result
-        print(f"[AI Checkpoint] Executing {func_name} (no cache hit)")
+        logging.info(f"[AI Checkpoint] Executing {func_name} (no cache hit)")
         result = await func(*args, **kwargs)
         set_ai_cached_result(func_name, result, *args, **kwargs)
 

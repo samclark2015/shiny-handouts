@@ -11,6 +11,7 @@
      hx-trigger="load delay:100ms"
      hx-target="#job-list"
      hx-swap="innerHTML"
+     hx-on::after-swap="if ('{{ job.status }}' === 'completed') htmx.trigger('body', 'jobCompleted')"
      {% endif %}>
     
     <div class="flex items-center justify-between mb-2">

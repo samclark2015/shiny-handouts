@@ -87,11 +87,11 @@ STAGE_WEIGHTS = {
     "download_video": 0.15,  # 15%
     "extract_captions": 0.15,  # 15%
     "match_frames": 0.15,  # 15%
-    "transform_slides_ai": 0.15,  # 15%
+    "transform_slides_with_ai": 0.15,  # 15%
     "generate_output": 0.10,  # 10%
     "compress_pdf": 0.08,  # 8%
     "generate_spreadsheet": 0.10,  # 10%
-    "generate_vignette": 0.08,  # 8%
+    "generate_vignette_pdf": 0.08,  # 8%
     "finalize_job": 0.02,  # 2%
 }
 
@@ -941,14 +941,14 @@ async def generate_vignette_task(data: dict) -> dict:
     if not pdf_path or not os.path.exists(pdf_path):
         return ctx.to_dict()
 
-    source_id = data.get("source_id", "")
-    cached = get_cached_result(source_id, stage_name)
-    if cached:
-        _, _, vignette_path = cached
-        if os.path.exists(vignette_path):
-            ctx.outputs["vignette_path"] = vignette_path
-            await update_job_progress(job_id, stage_name, 1.0, "Using cached vignette")
-            return ctx.to_dict()
+    # source_id = data.get("source_id", "")
+    # cached = get_cached_result(source_id, stage_name)
+    # if cached:
+    #     _, _, vignette_path = cached
+    #     if os.path.exists(vignette_path):
+    #         ctx.outputs["vignette_path"] = vignette_path
+    #         await update_job_progress(job_id, stage_name, 1.0, "Using cached vignette")
+    #         return ctx.to_dict()
 
     await update_job_progress(job_id, stage_name, 0.2, "Generating questions")
     vignette_data = await generate_vignette_questions(

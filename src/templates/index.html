@@ -209,7 +209,7 @@
             
             <div id="file-browser" 
                  hx-get="{% url 'api:get_files' %}"
-                 hx-trigger="every 30s"
+                 hx-trigger="jobCompleted from:body"
                  hx-swap="innerHTML"
                  class="file-tree">
                 {% include "partials/file_browser.html" %}
@@ -221,6 +221,35 @@
 
 {% block scripts %}
 <script>
+    // Preserve file browser collapse state across HTMX updates
+    let fileBrowserState = new Set();
+    
+    document.body.addEventListener('htmx:beforeSwap', (event) => {
+        if (event.detail.target.id === 'file-browser') {
+            // Save which details elements are open
+            fileBrowserState.clear();
+            event.detail.target.querySelectorAll('details[open]').forEach(details => {
+                // Use summary text as identifier
+                const summary = details.querySelector('summary');
+                if (summary) {
+                    fileBrowserState.add(summary.textContent.trim());
+                }
+            });
+        }
+    });
+    
+    document.body.addEventListener('htmx:afterSwap', (event) => {
+        if (event.detail.target.id === 'file-browser') {
+            // Restore open state
+            event.detail.target.querySelectorAll('details').forEach(details => {
+                const summary = details.querySelector('summary');
+                if (summary && fileBrowserState.has(summary.textContent.trim())) {
+                    details.open = true;
+                }
+            });
+        }
+    });
+    
     // Tab switching
     function switchTab(tabName) {
         // Update tab buttons
@@ -291,6 +320,12 @@
                 fileName.classList.add('hidden');
                 uploadBtn.disabled = true;
             }
+        }
+        
+        // Clear Panopto info after successful submission
+        if (e.detail.elt.id === 'panopto-form' && e.detail.successful) {
+            // Navigate to page without query parameters
+            window.location.href = window.location.pathname;
         }
     });
 </script>

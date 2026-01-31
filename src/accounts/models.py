@@ -4,6 +4,9 @@ User model for Handout Generator.
 Custom user model with OAuth integration for Authentik.
 """
 
+import json
+import os
+
 from django.contrib.auth.models import (
     AbstractBaseUser,
     BaseUserManager,
@@ -12,35 +15,26 @@ from django.contrib.auth.models import (
 from django.db import models
 from django.utils import timezone
 
+
+def load_default_spreadsheet_columns():
+    """Load default spreadsheet columns from JSON file."""
+    json_path = os.path.join(
+        os.path.dirname(__file__), "..", "prompts", "default_spreadsheet_columns.json"
+    )
+    try:
+        with open(json_path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        # Fallback if file doesn't exist
+        return [
+            {"name": "Condition", "description": "The name of the disease or condition"},
+            {"name": "Risk Factors", "description": "Risk factors for developing the condition"},
+            {"name": "Etiology", "description": "The cause or origin of the condition"},
+        ]
+
+
 # Default column configuration for Excel spreadsheet
-DEFAULT_SPREADSHEET_COLUMNS = [
-    {"name": "Condition", "description": "The name of the disease or condition"},
-    {"name": "Risk Factors", "description": "Risk factors for developing the condition"},
-    {"name": "Etiology", "description": "The cause or origin of the condition"},
-    {
-        "name": "Pathology",
-        "description": "The structural and functional changes caused by the disease",
-    },
-    {"name": "Pathophysiology", "description": "The mechanisms and progression of the disease"},
-    {"name": "Clinical Presentation", "description": "Signs and symptoms patients present with"},
-    {"name": "Diagnosis / Key Findings", "description": "Diagnostic criteria and key findings"},
-    {"name": "Histology Key Findings", "description": "Microscopic findings on tissue examination"},
-    {"name": "Prognosis", "description": "Expected outcome and disease progression"},
-    {"name": "Treatment", "description": "Treatment options and management"},
-    {
-        "name": "Classic Step 1–Style Question Stem",
-        "description": "A clinically plausible USMLE-style question stem",
-    },
-    {
-        "name": "Photos from Lecture",
-        "description": "Description of relevant images from the lecture",
-    },
-    {
-        "name": "Additional Notes/Important Things",
-        "description": "Additional notes and important points",
-    },
-    {"name": "Mnemonic", "description": "Memory aids for the condition"},
-]
+DEFAULT_SPREADSHEET_COLUMNS = load_default_spreadsheet_columns()
 
 
 class UserManager(BaseUserManager):
