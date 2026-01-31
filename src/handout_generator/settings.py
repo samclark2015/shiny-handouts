@@ -21,6 +21,10 @@ CSRF_TRUSTED_ORIGINS = os.environ.get(
     "CSRF_TRUSTED_ORIGINS", "http://localhost:5001,http://127.0.0.1:5001"
 ).split(",")
 
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+
 # Application definition
 INSTALLED_APPS = [
     "django.contrib.admin",
