@@ -5,9 +5,9 @@ import os
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, render
 
-from core.models import Job, JobStatus, Lecture
+from core.models import ArtifactType, Job, JobStatus, Lecture
 
 
 @login_required
@@ -106,5 +106,45 @@ def render_mindmap(request, filename: str):
         {
             "mermaid_code": mermaid_code,
             "title": title,
+        },
+    )
+
+
+@login_required
+def lecture_mindmaps(request, lecture_id: int):
+    """Display all mindmaps for a given lecture."""
+    lecture = get_object_or_404(Lecture, id=lecture_id, user=request.user)
+
+    # Get all mindmap artifacts for this lecture
+    mindmap_artifacts = lecture.artifacts.filter(artifact_type=ArtifactType.MERMAID_MINDMAP)
+
+    # Read the mermaid code for each mindmap
+    mindmaps = []
+    for artifact in mindmap_artifacts:
+        file_path = os.path.join(settings.OUTPUT_DIR, artifact.file_name)
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                mermaid_code = f.read()
+            # Extract title from filename (remove base lecture name prefix if present)
+            title = os.path.splitext(artifact.file_name)[0]
+            # Try to get just the mindmap-specific part after " - "
+            if " - " in title:
+                parts = title.split(" - ")
+                if len(parts) > 1:
+                    title = parts[-1]  # Get the last part (mindmap title)
+            mindmaps.append(
+                {
+                    "title": title,
+                    "mermaid_code": mermaid_code,
+                    "artifact": artifact,
+                }
+            )
+
+    return render(
+        request,
+        "lecture_mindmaps.html",
+        {
+            "lecture": lecture,
+            "mindmaps": mindmaps,
         },
     )

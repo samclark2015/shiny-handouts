@@ -21,16 +21,10 @@
                     </summary>
 
                     <div class="pl-4 py-2 space-y-1">
+                        {% regroup lecture.artifacts.all by artifact_type as artifacts_by_type %}
                         {% for artifact in lecture.artifacts.all %}
+                        {% if artifact.artifact_type != 'mermaid_mindmap' %}
                         <div class="flex items-center space-x-2 text-sm">
-
-                            {% if artifact.artifact_type == 'mermaid_mindmap' %}
-                            <a href="{% url 'main:render_mindmap' artifact.file_name %}" target="_blank"
-                                class="text-blue-600 hover:text-blue-800 hover:underline truncate flex-1">
-                                <span class="text-teal-600">🧠</span>
-                                <span class="text-gray-500">Mindmap</span>
-                            </a>
-                            {% else %}
                             <a href="{% url 'main:serve_file' artifact.file_name %}" target="_blank"
                                 class="text-blue-600 hover:text-blue-800 hover:underline truncate flex-1">
                                 {% if artifact.artifact_type == 'pdf_handout' %}
@@ -47,7 +41,6 @@
                                 <span class="text-gray-500">{{ artifact.file_name }}</span>
                                 {% endif %}
                             </a>
-                            {% endif %}
 
                             {% if artifact.file_size %}
                             <span class="text-gray-400 text-xs">
@@ -55,8 +48,21 @@
                             </span>
                             {% endif %}
                         </div>
+                        {% endif %}
                         {% empty %}
                         <p class="text-gray-500 text-sm">No files generated yet</p>
+                        {% endfor %}
+                        
+                        {% for group in artifacts_by_type %}
+                        {% if group.grouper == 'mermaid_mindmap' %}
+                        <div class="flex items-center space-x-2 text-sm">
+                            <a href="{% url 'main:lecture_mindmaps' lecture.id %}" target="_blank"
+                                class="text-blue-600 hover:text-blue-800 hover:underline truncate flex-1">
+                                <span class="text-teal-600">🧠</span>
+                                <span class="text-gray-500">Mindmaps ({{ group.list|length }})</span>
+                            </a>
+                        </div>
+                        {% endif %}
                         {% endfor %}
                     </div>
                 </details>
