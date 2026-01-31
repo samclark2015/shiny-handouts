@@ -2,19 +2,28 @@
 
 import json
 import os
-from datetime import datetime, timezone
-from typing import Generator
+import time
+from collections.abc import Generator
+from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
+import jwt
+import requests
 from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.db import models
+from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from core.models import Job, JobStatus, Lecture
+
+APP_ID = os.getenv("GITHUB_APP_ID", "")
+INSTALLATION_ID = os.getenv("GITHUB_INSTALLATION_ID", "")
+PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY", "")
+REPO = os.getenv("REPO", "")
 
 
 @require_POST
@@ -36,9 +45,9 @@ def upload_file(request):
     # Save the file
     filename = get_valid_filename(file.name)
     file_path = os.path.join(settings.INPUT_DIR, filename)
-    
+
     os.makedirs(settings.INPUT_DIR, exist_ok=True)
-    
+
     with open(file_path, "wb+") as destination:
         for chunk in file.chunks():
             destination.write(chunk)
@@ -197,7 +206,7 @@ def get_job(request, job_id: int):
     job = get_object_or_404(Job, id=job_id, user=request.user)
 
     response_html = render(request, "partials/job_card.html", {"job": job}).content.decode()
-    
+
     # If job just completed, also refresh the file browser via OOB swap
     if job.status == JobStatus.COMPLETED:
         lectures = Lecture.objects.filter(user=request.user).order_by("-date")
@@ -207,7 +216,7 @@ def get_job(request, job_id: int):
             if date_key not in lectures_by_date:
                 lectures_by_date[date_key] = []
             lectures_by_date[date_key].append(lecture)
-        
+
         file_browser = render(
             request,
             "partials/file_browser.html",
@@ -321,11 +330,11 @@ def job_progress(request, job_id: int):
     def event_stream() -> Generator[str, None, None]:
         """Generate SSE events from Redis pub/sub."""
         import redis
-        
+
         redis_client = redis.from_url(settings.REDIS_URL)
         pubsub = redis_client.pubsub()
         pubsub.subscribe(f"job:{job_id}:progress")
-        
+
         try:
             # Send initial state
             initial_data = {
@@ -336,17 +345,17 @@ def job_progress(request, job_id: int):
                 "error": job.error_message or "",
             }
             yield f"data: {json.dumps(initial_data)}\n\n"
-            
+
             # Check if already complete
             if job.is_terminal:
                 return
-            
+
             # Listen for updates
             for message in pubsub.listen():
                 if message["type"] == "message":
                     data = json.loads(message["data"])
                     yield f"data: {json.dumps(data)}\n\n"
-                    
+
                     # Stop if job is complete
                     if data.get("status") in ("completed", "failed", "cancelled"):
                         break
@@ -363,3 +372,145 @@ def job_progress(request, job_id: int):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def generate_jwt():
+    """Generate a JWT for GitHub App authentication"""
+    private_key = PRIVATE_KEY
+
+    payload = {
+        "iat": int(time.time()) - 60,  # issued at
+        "exp": int(time.time()) + (10 * 60),  # 10 minute expiration
+        "iss": APP_ID,
+    }
+    return jwt.encode(payload, private_key, algorithm="RS256")
+
+
+def get_installation_token():
+    """Exchange the JWT for an installation access token"""
+    jwt_token = generate_jwt()
+    headers = {
+        "Authorization": f"Bearer {jwt_token}",
+        "Accept": "application/vnd.github+json",
+    }
+    url = f"https://api.github.com/app/installations/{INSTALLATION_ID}/access_tokens"
+    res = requests.post(url, headers=headers)
+    if res.status_code != 201:
+        raise Exception("Failed to get installation token")
+    return res.json()["token"]
+
+
+def send_bug_report_to_github(
+    user_info: dict,
+    timestamp: datetime,
+    title: str,
+    description: str,
+    job_ids: list[int] | None = None,
+) -> dict:
+    """
+    Function to send bug reports to GitHub using the GitHub App.
+
+    Args:
+        user_info: Dictionary containing user information (email, name, id)
+        timestamp: Date and time when the bug was reported
+        description: User's description of the issue
+        job_ids: List of currently running job IDs for context
+
+    Returns:
+        Dictionary with submission status and any relevant data
+    """
+    token = get_installation_token()
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # Build issue body with optional job context
+    body_parts = [description]
+    if job_ids:
+        body_parts.append(f"\n\n**Active Jobs:** {', '.join(f'#{job_id}' for job_id in job_ids)}")
+    body_parts.append(f"\n\n**User ID:** {user_info['id']}")
+    body_parts.append("\n\n_Reported via anonymous form_")
+
+    payload = {
+        "title": f"[Anonymous Bug] {title or 'No Title Provided'}",
+        "body": "".join(body_parts),
+    }
+    res = requests.post(
+        f"https://api.github.com/repos/{REPO}/issues", json=payload, headers=headers
+    )
+
+    if res.status_code not in (200, 201):
+        raise Exception(res.text)
+
+    return {
+        "message": "Bug reported successfully",
+        "issue_url": res.json()["html_url"],
+        "success": True,
+    }
+
+
+@require_POST
+@login_required
+def submit_bug_report(request):
+    """Handle bug report submissions from users."""
+    # Check if GitHub App is configured
+    if not all([APP_ID, INSTALLATION_ID, PRIVATE_KEY, REPO]):
+        return render(
+            request,
+            "partials/bug_report_error.html",
+            {"error": "Bug reporting is not configured"},
+            status=503,
+        )
+
+    title = request.POST.get("title", "").strip()
+    description = request.POST.get("description", "").strip()
+
+    if not description:
+        return render(
+            request,
+            "partials/bug_report_error.html",
+            {"error": "Description is required"},
+            status=400,
+        )
+
+    # Gather user info
+    user_info = {
+        "id": request.user.id,
+        "email": request.user.email,
+    }
+
+    # Get currently running or recently failed jobs for context
+    one_hour_ago = datetime.now() - timedelta(hours=1)
+
+    # Get running/pending jobs (any time) and failed jobs from last hour
+    active_jobs = (
+        Job.objects.filter(user=request.user)
+        .filter(
+            models.Q(status__in=[JobStatus.PENDING, JobStatus.RUNNING])
+            | models.Q(status=JobStatus.FAILED, created_at__gte=one_hour_ago)
+        )
+        .values_list("id", flat=True)
+    )
+    job_ids = list(active_jobs) if active_jobs else None
+
+    # Current timestamp
+    timestamp = datetime.now()
+
+    # Call stub service
+    try:
+        result = send_bug_report_to_github(
+            user_info=user_info,
+            timestamp=timestamp,
+            title=title,
+            description=description,
+            job_ids=job_ids,
+        )
+
+        return render(
+            request,
+            "partials/bug_report_success.html",
+            {"message": result["message"], "issue_url": result.get("issue_url")},
+        )
+    except Exception as e:
+        return render(request, "partials/bug_report_error.html", {"error": str(e)}, status=500)
