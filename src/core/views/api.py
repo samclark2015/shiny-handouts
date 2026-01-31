@@ -6,6 +6,7 @@ import time
 from collections.abc import Generator
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+import base64
 
 import jwt
 import requests
@@ -17,12 +18,11 @@ from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
-
 from core.models import Job, JobStatus, Lecture
 
 APP_ID = os.getenv("GITHUB_APP_ID", "")
 INSTALLATION_ID = os.getenv("GITHUB_INSTALLATION_ID", "")
-PRIVATE_KEY = os.getenv("GITHUB_PRIVATE_KEY", "")
+PRIVATE_KEY = base64.b64decode(os.getenv("GITHUB_PRIVATE_KEY", "")).decode("utf-8")
 REPO = os.getenv("REPO", "")
 
 
@@ -330,6 +330,7 @@ def job_progress(request, job_id: int):
     def event_stream() -> Generator[str, None, None]:
         """Generate SSE events from Redis pub/sub."""
         import redis
+import base64
 
         redis_client = redis.from_url(settings.REDIS_URL)
         pubsub = redis_client.pubsub()
