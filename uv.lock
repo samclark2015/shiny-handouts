@@ -1759,6 +1759,7 @@ name = "shiny-handouts"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "aiohttp" },
     { name = "audioop-lts" },
     { name = "chatlas" },
     { name = "click" },
@@ -1805,6 +1806,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "aiohttp", specifier = ">=3.13.3" },
     { name = "audioop-lts", specifier = ">=0.2" },
     { name = "chatlas", specifier = ">=0.15" },
     { name = "click", specifier = ">=8.1" },

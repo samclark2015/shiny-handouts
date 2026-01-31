@@ -24,6 +24,7 @@ from typing import cast
 from urllib.parse import urljoin
 from uuid import uuid4
 
+import aiohttp
 import cv2
 import m3u8
 import pandas as pd
@@ -1047,20 +1048,34 @@ async def _download_regular_video(
     job_id: int, stage_name: str, video_url: str, video_path: str
 ) -> None:
     """Download a regular video file."""
+    await update_job_progress(job_id, stage_name, 0.1, "Starting download")
 
-    def download():
-        def report_progress(count, block_size, total_size):
-            # Note: Can't easily update from sync callback in threaded context
-            pass
+    async with aiohttp.ClientSession() as session, session.get(video_url) as response:
+        response.raise_for_status()
+        total = int(response.headers.get("content-length", 0))
+        downloaded = 0
+        last_reported_percent = -1
 
-        opener = urllib.request.build_opener()
-        opener.addheaders = [("Range", "bytes=0-")]
-        urllib.request.install_opener(opener)
+        with open(video_path, "wb") as f:
+            async for chunk in response.content.iter_chunked(8192):
+                f.write(chunk)
+                downloaded += len(chunk)
 
-        urllib.request.urlretrieve(video_url, video_path, reporthook=report_progress)
+                if total > 0:
+                    progress = downloaded / total
+                    # Scale to stage range: 0.1 to 0.9
+                    scaled_progress = 0.1 + (progress * 0.8)
+                    # Report every 5% to avoid too many updates
+                    current_percent = int(progress * 20)
+                    if current_percent > last_reported_percent:
+                        await update_job_progress(
+                            job_id,
+                            stage_name,
+                            scaled_progress,
+                            f"Downloading video ({int(progress * 100)}%)",
+                        )
+                        last_reported_percent = current_percent
 
-    await update_job_progress(job_id, stage_name, 0.1, "Downloading video")
-    await asyncio.to_thread(download)
     await update_job_progress(job_id, stage_name, 0.9, "Download complete")
 
 
