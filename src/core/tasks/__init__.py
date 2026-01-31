@@ -83,4 +83,3 @@ __all__ = [
     "generate_artifacts_task",
     "finalize_job_task",
 ]
-]
