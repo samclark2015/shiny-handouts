@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+
+{% block title %}User Settings{% endblock %}
+
+{% block body %}
+<header class="bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-900">User Settings</h1>
+        <div class="flex items-center space-x-4">
+            <a href="{% url 'main:index' %}" class="text-sm text-blue-600 hover:text-blue-800">Back to Dashboard</a>
+            <a href="{% url 'account_logout' %}"
+                class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Logout
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    {% if messages %}
+    <ul class="mb-4">
+        {% for message in messages %}
+        <li
+            class="p-3 rounded-md {% if message.tags == 'success' %}bg-green-50 text-green-700 border border-green-200{% else %}bg-red-50 text-red-700 border border-red-200{% endif %}">
+            {{ message }}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="bg-white rounded-lg shadow-md p-6 space-y-6">
+        <form method="post" class="space-y-6" id="settings-form">
+            {% csrf_token %}
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Vignette Prompt</label>
+                <p class="text-xs text-gray-500 mb-2">Leave blank to use the default loaded from prompts.</p>
+                {{ form.vignette_prompt }}
+                <details class="mt-2">
+                    <summary class="text-xs text-gray-600 cursor-pointer">View default prompt</summary>
+                    <pre
+                        class="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs whitespace-pre-wrap">{{ default_vignette }}</pre>
+                </details>
+            </div>
+
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Spreadsheet Prompt</label>
+                <p class="text-xs text-gray-500 mb-2">Leave blank to use the default loaded from prompts.</p>
+                {{ form.spreadsheet_prompt }}
+                <details class="mt-2">
+                    <summary class="text-xs text-gray-600 cursor-pointer">View default prompt</summary>
+                    <pre
+                        class="mt-2 p-3 bg-gray-50 border border-gray-200 rounded text-xs whitespace-pre-wrap">{{ default_spreadsheet }}</pre>
+                </details>
+            </div>
+
+            {% include "partials/spreadsheet_columns.html" %}
+
+            <div class="flex justify-end">
+                <button type="submit"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">Save
+                    Settings</button>
+            </div>
+        </form>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+{{ default_columns|json_script:"default-columns-data" }}
+<script>
+    function addRow(name = '', description = '') {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-gray-50';
+        tr.innerHTML = `
+            <td class="px-2 py-2 text-gray-400 cursor-move drag-handle" draggable="true">
+                <i class="fas fa-grip-vertical"></i>
+            </td>
+            <td class="px-4 py-2">
+                <input type="text" class="w-full px-2 py-1 border border-gray-300 rounded-md" value="${name}" placeholder="Column name">
+            </td>
+            <td class="px-4 py-2">
+                <textarea class="w-full px-2 py-1 border border-gray-300 rounded-md" placeholder="Description (optional)">${description}</textarea>
+            </td>
+            <td class="px-4 py-2 text-right">
+                <button type="button" class="text-red-600 hover:text-red-800" onclick="removeRow(this)">Remove</button>
+            </td>`;
+        const tbody = document.getElementById('columns-body');
+        tbody.appendChild(tr);
+        setupDragAndDrop(tr);
+    }
+
+    function removeRow(btn) {
+        const tr = btn.closest('tr');
+        tr?.remove();
+    }
+
+    function resetToDefault() {
+        const defaults = JSON.parse(document.getElementById('default-columns-data').textContent);
+        const body = document.getElementById('columns-body');
+        body.innerHTML = '';
+        defaults.forEach(col => addRow(col.name || '', col.description || ''));
+    }
+
+    // Drag and drop functionality
+    let draggedRow = null;
+
+    function setupDragAndDrop(row) {
+        const handle = row.querySelector('.drag-handle');
+        if (!handle) return;
+
+        handle.addEventListener('dragstart', function(e) {
+            draggedRow = this.closest('tr');
+            draggedRow.style.opacity = '0.5';
+            e.dataTransfer.effectAllowed = 'move';
+        });
+
+        handle.addEventListener('dragend', function(e) {
+            if (draggedRow) {
+                draggedRow.style.opacity = '';
+            }
+        });
+
+        row.addEventListener('dragover', function(e) {
+            if (e.preventDefault) {
+                e.preventDefault();
+            }
+            e.dataTransfer.dropEffect = 'move';
+            
+            // Reorder live as dragging
+            if (this !== draggedRow && draggedRow) {
+                const tbody = document.getElementById('columns-body');
+                const allRows = Array.from(tbody.querySelectorAll('tr'));
+                const draggedIndex = allRows.indexOf(draggedRow);
+                const targetIndex = allRows.indexOf(this);
+                
+                if (draggedIndex !== -1 && targetIndex !== -1) {
+                    // Calculate position based on mouse position within the target row
+                    const rect = this.getBoundingClientRect();
+                    const midpoint = rect.top + rect.height / 2;
+                    
+                    if (e.clientY < midpoint) {
+                        // Insert before target
+                        tbody.insertBefore(draggedRow, this);
+                    } else {
+                        // Insert after target
+                        tbody.insertBefore(draggedRow, this.nextSibling);
+                    }
+                    hasUnsavedChanges = true;
+                }
+            }
+            
+            return false;
+        });
+
+        row.addEventListener('drop', function(e) {
+            if (e.stopPropagation) {
+                e.stopPropagation();
+            }
+            return false;
+        });
+    }
+
+    // Initialize drag and drop for existing rows
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('#columns-body tr').forEach(setupDragAndDrop);
+    });
+
+    // Track unsaved changes
+    let hasUnsavedChanges = false;
+
+    // Mark as changed when any form field is modified
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('settings-form');
+        
+        // Monitor text inputs and textareas
+        form.addEventListener('input', function() {
+            hasUnsavedChanges = true;
+        });
+        
+        // Monitor column changes
+        const originalRemoveRow = window.removeRow;
+        window.removeRow = function(btn) {
+            hasUnsavedChanges = true;
+            originalRemoveRow(btn);
+        };
+        
+        const originalAddRow = window.addRow;
+        window.addRow = function(name = '', description = '') {
+            hasUnsavedChanges = true;
+            originalAddRow(name, description);
+        };
+        
+        const originalResetToDefault = window.resetToDefault;
+        window.resetToDefault = function() {
+            hasUnsavedChanges = true;
+            originalResetToDefault();
+        };
+    });
+
+    // Warn before leaving with unsaved changes
+    window.addEventListener('beforeunload', function(e) {
+        if (hasUnsavedChanges) {
+            e.preventDefault();
+            e.returnValue = ''; // Modern browsers require this
+            return ''; // For older browsers
+        }
+    });
+
+    // Clear flag on successful form submission
+    document.getElementById('settings-form').addEventListener('submit', function (e) {
+        hasUnsavedChanges = false;
+        
+        const rows = Array.from(document.querySelectorAll('#columns-body tr'));
+        const cols = rows.map(row => {
+            const nameInput = row.querySelector('input[type="text"]');
+            const descTextarea = row.querySelector('textarea');
+            return {
+                name: nameInput ? nameInput.value.trim() : '',
+                description: descTextarea ? descTextarea.value.trim() : '',
+            };
+        }).filter(c => c.name);
+        const hidden = document.getElementById('id_spreadsheet_columns_json');
+        if (hidden) {
+            hidden.value = JSON.stringify(cols);
+        }
+    });
+</script>
+{% endblock %}
