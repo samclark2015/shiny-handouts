@@ -127,12 +127,13 @@ def create_artifact(
                 date=datetime.now(UTC),
             )
 
-        # Check if artifact already exists for this lecture and type
-        existing = Artifact.objects.filter(lecture=lecture, artifact_type=artifact_type).first()
+        # Check if artifact already exists for this lecture and file path
+        # Use file_path as unique key to allow multiple artifacts of the same type
+        existing = Artifact.objects.filter(lecture=lecture, file_path=file_path).first()
 
         if existing:
             # Update existing artifact
-            existing.file_path = file_path
+            existing.artifact_type = artifact_type
             existing.file_name = os.path.basename(file_path)
             existing.file_size = os.path.getsize(file_path)
             existing.save()
