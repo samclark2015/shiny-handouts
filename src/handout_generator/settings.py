@@ -168,6 +168,12 @@ S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "")  # For S3-compatible ser
 S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID", "") or os.environ.get("AWS_ACCESS_KEY_ID", "")
 S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")
 
+# S3-compatible service settings (SeaweedFS, MinIO, etc.)
+# Set to true if presigned URLs fail with SignatureDoesNotMatch errors
+S3_SKIP_CONTENT_DISPOSITION = os.environ.get("S3_SKIP_CONTENT_DISPOSITION", "false").lower() in ("true", "1", "yes")
+# Use path-style addressing (bucket in path instead of subdomain)
+S3_USE_PATH_STYLE = os.environ.get("S3_USE_PATH_STYLE", "false").lower() in ("true", "1", "yes")
+
 # S3 key prefixes
 S3_INPUT_PREFIX = "input/"
 S3_OUTPUT_PREFIX = "output/"

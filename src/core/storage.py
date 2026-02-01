@@ -32,6 +32,8 @@ class StorageConfig:
     input_prefix: str
     output_prefix: str
     frames_prefix: str
+    skip_content_disposition: bool
+    use_path_style: bool
 
     @classmethod
     def from_settings(cls) -> "StorageConfig":
@@ -46,6 +48,8 @@ class StorageConfig:
             input_prefix=getattr(settings, "S3_INPUT_PREFIX", "input/"),
             output_prefix=getattr(settings, "S3_OUTPUT_PREFIX", "output/"),
             frames_prefix=getattr(settings, "S3_FRAMES_PREFIX", "frames/"),
+            skip_content_disposition=getattr(settings, "S3_SKIP_CONTENT_DISPOSITION", False),
+            use_path_style=getattr(settings, "S3_USE_PATH_STYLE", False),
         )
 
 
@@ -227,13 +231,22 @@ def get_local_path(storage_type: StorageType, filename: str, source_id: str | No
 @asynccontextmanager
 async def get_s3_client():
     """Create an async S3 client context manager."""
+    from botocore.config import Config as BotoConfig
+
     config = get_storage_config()
     session = aioboto3.Session()
+
+    # Configure client for S3-compatible services
+    boto_config = BotoConfig(
+        s3={"addressing_style": "path" if config.use_path_style else "auto"},
+        signature_version="s3v4",
+    )
 
     client_kwargs = {
         "region_name": config.region,
         "aws_access_key_id": config.access_key_id,
         "aws_secret_access_key": config.secret_access_key,
+        "config": boto_config,
     }
 
     if config.endpoint_url:
@@ -480,6 +493,7 @@ async def generate_presigned_url(
         storage_path: The storage path (S3 key)
         expiration: URL expiration time in seconds (default 1 hour)
         response_content_disposition: Optional Content-Disposition header value
+            (ignored if S3_SKIP_CONTENT_DISPOSITION is set for S3-compatible services)
 
     Returns:
         The presigned URL, or the local path if S3 is disabled
@@ -495,7 +509,9 @@ async def generate_presigned_url(
         "Key": storage_path,
     }
 
-    if response_content_disposition:
+    # Some S3-compatible services (SeaweedFS, etc.) don't properly handle
+    # ResponseContentDisposition in presigned URL signature calculation
+    if response_content_disposition and not config.skip_content_disposition:
         params["ResponseContentDisposition"] = response_content_disposition
 
     async with get_s3_client() as s3:
