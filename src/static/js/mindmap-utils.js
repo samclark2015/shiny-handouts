@@ -3,6 +3,8 @@
  */
 
 const MindmapUtils = {
+  _renderCounter: 0,
+
   /**
    * Initialize Mermaid with given options
    */
@@ -12,19 +14,28 @@ const MindmapUtils = {
       theme: theme,
       mindmap: { padding: parseInt(padding), useMaxWidth: false },
       securityLevel: 'loose',
-      flowchart: { useMaxWidth: false }
+      flowchart: { useMaxWidth: false },
+      logLevel: 'error'
     });
   },
 
   /**
    * Render a single mermaid diagram
    */
-  async renderDiagram(elementId, code, svgId) {
+  async renderDiagram(elementId, code, svgIdPrefix) {
     const element = document.getElementById(elementId);
-    if (!element || !code) return false;
+    if (!element) {
+      console.error('Mermaid: Element not found:', elementId);
+      return false;
+    }
+    if (!code || !code.trim()) {
+      console.error('Mermaid: No code provided');
+      return false;
+    }
 
-    element.innerHTML = code;
-    element.removeAttribute('data-processed');
+    // Generate unique ID for each render to avoid conflicts
+    this._renderCounter++;
+    const svgId = `${svgIdPrefix}-${this._renderCounter}`;
 
     try {
       const { svg } = await mermaid.render(svgId, code);
@@ -32,9 +43,22 @@ const MindmapUtils = {
       return true;
     } catch (error) {
       console.error('Mermaid rendering error:', error);
-      element.innerHTML = `<pre>${code}</pre>`;
+      // Show the code and error for debugging
+      element.innerHTML = `<div style="color: red; padding: 1rem;">
+        <strong>Diagram rendering failed:</strong> ${error.message || error}
+      </div>
+      <pre style="background: #f5f5f5; padding: 1rem; overflow: auto;">${this._escapeHtml(code)}</pre>`;
       return false;
     }
+  },
+
+  /**
+   * Escape HTML entities for safe display
+   */
+  _escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   },
 
   /**

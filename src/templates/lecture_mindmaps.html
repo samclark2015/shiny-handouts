@@ -31,9 +31,9 @@
         </div>
       </div>
       <div class="mindmap-diagram" :class="{ 'dark-bg': theme === 'dark' }" id="mindmap-body-{{ forloop.counter0 }}">
-        <pre class="mermaid" id="mermaid-{{ forloop.counter0 }}">
-{{ mindmap.mermaid_code }}
-        </pre>
+        <div class="mermaid" id="mermaid-{{ forloop.counter0 }}">
+          <div style="padding: 1rem; color: #666;">Loading diagram...</div>
+        </div>
       </div>
     </div>
     {% endfor %}

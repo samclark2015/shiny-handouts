@@ -33,10 +33,9 @@
   </div>
 
   <div id="mindmap-diagram" class="mindmap-diagram large" :class="{ 'dark-bg': theme === 'dark' }">
-    <pre class="mermaid" id="mermaid-content">
-{{ mermaid_code }}
-        </pre
-    >
+    <div class="mermaid" id="mermaid-content">
+      <div style="padding: 2rem; color: #666;">Loading diagram...</div>
+    </div>
   </div>
 </div>
 
