@@ -15,14 +15,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
-from core.storage import (
-    get_job_key,
-    get_job_local_path,
-    get_s3_client,
-    get_storage_config,
-    is_s3_enabled,
-    temp_download,
-)
+from core.storage import temp_download, upload_job_file
 from core.tasks.config import broker
 from core.tasks.context import TaskContext
 from core.tasks.db import create_artifact
@@ -152,37 +145,9 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
             ws.column_dimensions[column_letter].width = adjusted_width
 
         # Save to temp file first, then upload
-        with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        await asyncio.to_thread(wb.save, tmp_path)
-
-        # Upload to storage
-        if is_s3_enabled():
-            config = get_storage_config()
-            s3_key = get_job_key(user_id, job_id, output_filename)
-
-            async with get_s3_client() as s3:
-                await s3.upload_file(
-                    tmp_path,
-                    config.bucket_name,
-                    s3_key,
-                    ExtraArgs={
-                        "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    },
-                )
-
-            storage_path = s3_key
-        else:
-            local_path = get_job_local_path(user_id, job_id, output_filename)
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            os.rename(tmp_path, local_path)
-            storage_path = local_path
-            tmp_path = None  # Don't delete, we moved it
-
-        # Clean up temp file if still exists
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+        with NamedTemporaryFile(suffix=".xlsx") as tmp:
+            await asyncio.to_thread(wb.save, tmp.name)
+            storage_path = await upload_job_file(tmp.name, user_id, job_id, output_filename)
 
         # Create artifact
         from core.models import ArtifactType
@@ -239,39 +204,12 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
         output_filename = f"{base_name} - Vignette Questions.pdf"
 
         # Create PDF in temp file
-        with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp_path = tmp.name
-
-        with open(tmp_path, "wb") as f:
-            pisa_status = pisa.CreatePDF(html, dest=f)
+        with NamedTemporaryFile(suffix=".pdf") as tmp:
+            pisa_status = pisa.CreatePDF(html, dest=tmp)
             if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
-                os.unlink(tmp_path)
                 return {}
-
-        # Upload to storage
-        if is_s3_enabled():
-            config = get_storage_config()
-            s3_key = get_job_key(user_id, job_id, output_filename)
-
-            async with get_s3_client() as s3:
-                await s3.upload_file(
-                    tmp_path,
-                    config.bucket_name,
-                    s3_key,
-                    ExtraArgs={"ContentType": "application/pdf"},
-                )
-
-            storage_path = s3_key
-        else:
-            local_path = get_job_local_path(user_id, job_id, output_filename)
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-            os.rename(tmp_path, local_path)
-            storage_path = local_path
-            tmp_path = None
-
-        # Clean up temp file if still exists
-        if tmp_path and os.path.exists(tmp_path):
-            os.unlink(tmp_path)
+            tmp.flush()
+            storage_path = await upload_job_file(tmp.name, user_id, job_id, output_filename)
 
         # Create artifact
         from core.models import ArtifactType
@@ -330,37 +268,16 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
                 safe_title = f"Mindmap {i + 1}"
 
             mindmap_filename = f"{base_name} - {safe_title}.mmd"
-            mermaid_bytes = mermaid_code.encode("utf-8")
 
-            # Upload mermaid code as text
-            if is_s3_enabled():
-                config = get_storage_config()
-                s3_key = get_job_key(user_id, job_id, mindmap_filename)
-
-                async with get_s3_client() as s3:
-                    await s3.put_object(
-                        Bucket=config.bucket_name,
-                        Key=s3_key,
-                        Body=mermaid_bytes,
-                        ContentType="text/plain",
-                    )
-
-                storage_path = s3_key
-            else:
-                local_path = get_job_local_path(user_id, job_id, mindmap_filename)
-                os.makedirs(os.path.dirname(local_path), exist_ok=True)
-                with open(local_path, "wb") as f:
-                    f.write(mermaid_bytes)
-                storage_path = local_path
+            # Write to temp file and upload
+            with NamedTemporaryFile(suffix=".mmd", mode="w", encoding="utf-8") as tmp:
+                tmp.write(mermaid_code)
+                tmp.flush()
+                storage_path = await upload_job_file(tmp.name, user_id, job_id, mindmap_filename)
 
             # Create artifact for each mindmap
             await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, storage_path)
             mindmap_paths.append(storage_path)
-
-        return {"mindmap_paths": mindmap_paths}
-    except Exception as e:
-        logging.exception(f"Failed to generate mindmap: {e}")
-        return {}
 
         return {"mindmap_paths": mindmap_paths}
     except Exception as e:
