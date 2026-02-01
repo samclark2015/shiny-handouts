@@ -1,82 +1,23 @@
 """
-Database operations for lectures and artifacts.
+Database operations for jobs and artifacts.
 """
 
 import logging
 import os
-from datetime import UTC, datetime
 
 from asgiref.sync import sync_to_async
 
 from core.storage import get_file_size, is_s3_enabled
 
 
-@sync_to_async
-def get_or_create_lecture(job_id: int, source_id: str | None = None):
-    """Get or create lecture for a job, keyed by source_id.
-
-    Args:
-        job_id: The job ID
-        source_id: Optional source ID. If not provided, will try to get from job's lecture.
-    """
-    from core.models import Job, Lecture
-
-    job = Job.objects.select_related("user").get(id=job_id)
-
-    # If source_id not provided, try to get from existing lecture
-    if not source_id:
-        try:
-            existing_lecture = Lecture.objects.get(job=job)
-            source_id = existing_lecture.source_id
-        except Lecture.DoesNotExist:
-            # No source_id and no existing lecture, create with empty source_id
-            source_id = ""
-
-    # Check if lecture already exists for this source_id and user
-    if source_id:
-        try:
-            lecture = Lecture.objects.get(source_id=source_id, user=job.user)
-            # Update the job reference if this is a retry
-            if lecture.job_id != job.pk:
-                lecture.job_id = job.pk
-                lecture.save(update_fields=["job"])
-            return lecture
-        except Lecture.DoesNotExist:
-            pass
-
-    # Check if lecture exists by job (for backwards compatibility)
-    try:
-        lecture = Lecture.objects.get(job=job)
-        # Update source_id if we have one now
-        if source_id and not lecture.source_id:
-            lecture.source_id = source_id
-            lecture.save(update_fields=["source_id"])
-        return lecture
-    except Lecture.DoesNotExist:
-        pass
-
-    # Create new lecture
-    lecture = Lecture(
-        user=job.user,
-        job=job,
-        title=job.label,
-        source_id=source_id,
-        date=datetime.now(UTC),
-    )
-    lecture.save()
-    return lecture
-
-
-async def create_artifact(
-    job_id: int, artifact_type, file_path: str, source_id: str | None = None
-) -> None:
+async def create_artifact(job_id: int, artifact_type, file_path: str) -> None:
     """Create an artifact record immediately when a file is generated.
 
     Args:
         job_id: The job ID
-        artifact_type: Type of artifact (PDF_HANDOUT, EXCEL_STUDY_TABLE, PDF_VIGNETTE)
+        artifact_type: Type of artifact (PDF_HANDOUT, EXCEL_STUDY_TABLE, PDF_VIGNETTE, etc.)
         file_path: Path to the generated file (local path or S3 key)
-        source_id: Optional source ID for lecture lookup
+        source_id: Deprecated, kept for backwards compatibility (ignored)
     """
     from core.models import Artifact
 
@@ -97,9 +38,7 @@ async def create_artifact(
         # Get the filename from the path
         file_name = os.path.basename(file_path)
 
-        await _create_artifact_sync(
-            job_id, artifact_type, file_path, file_name, file_size, source_id
-        )
+        await _create_artifact_sync(job_id, artifact_type, file_path, file_name, file_size)
     except Exception as e:
         logging.exception(f"Failed to create artifact for job {job_id}: {e}")
 
@@ -111,54 +50,14 @@ def _create_artifact_sync(
     file_path: str,
     file_name: str,
     file_size: int,
-    source_id: str | None,
 ) -> None:
     """Synchronous helper for creating artifacts."""
-    from core.models import Artifact, Job, Lecture
+    from core.models import Artifact, Job
 
-    job = Job.objects.select_related("user").get(id=job_id)
+    job = Job.objects.get(id=job_id)
 
-    # If source_id not provided, try to get from existing lecture
-    if not source_id:
-        try:
-            existing_lecture = Lecture.objects.get(job=job)
-            source_id = existing_lecture.source_id
-        except Lecture.DoesNotExist:
-            source_id = ""
-
-    # Check if lecture already exists for this source_id and user
-    lecture = None
-    if source_id:
-        try:
-            lecture = Lecture.objects.get(source_id=source_id, user=job.user)
-            if lecture.job != job.pk:
-                lecture.job = job
-                lecture.save(update_fields=["job"])
-        except Lecture.DoesNotExist:
-            pass
-
-    # Check if lecture exists by job (for backwards compatibility)
-    if not lecture:
-        try:
-            lecture = Lecture.objects.get(job=job)
-            if source_id and not lecture.source_id:
-                lecture.source_id = source_id
-                lecture.save(update_fields=["source_id"])
-        except Lecture.DoesNotExist:
-            pass
-
-    # Create new lecture if needed
-    if not lecture:
-        lecture = Lecture.objects.create(
-            user=job.user,
-            job=job,
-            title=job.label,
-            source_id=source_id,
-            date=datetime.now(UTC),
-        )
-
-    # Check if artifact already exists for this lecture and file path
-    existing = Artifact.objects.filter(lecture=lecture, file_path=file_path).first()
+    # Check if artifact already exists for this job and file path
+    existing = Artifact.objects.filter(job=job, file_path=file_path).first()
 
     if existing:
         # Update existing artifact
@@ -169,9 +68,34 @@ def _create_artifact_sync(
     else:
         # Create new artifact
         Artifact.objects.create(
-            lecture=lecture,
+            job=job,
             artifact_type=artifact_type,
             file_path=file_path,
             file_name=file_name,
             file_size=file_size,
         )
+
+
+@sync_to_async
+def update_job_source_info(
+    job_id: int, source_id: str, title: str | None = None, video_path: str | None = None
+) -> None:
+    """Update job with source information.
+
+    Args:
+        job_id: The job ID
+        source_id: The source identifier
+        title: Optional title (defaults to job label if not provided)
+        video_path: Optional path to the video file
+    """
+    from core.models import Job
+
+    job = Job.objects.get(id=job_id)
+
+    job.source_id = source_id
+    if title:
+        job.title = title
+    if video_path:
+        job.video_path = video_path
+
+    job.save(update_fields=["source_id", "title", "video_path"])

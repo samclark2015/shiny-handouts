@@ -9,7 +9,7 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from core.models import Artifact, ArtifactType, Lecture
+from core.models import Artifact, ArtifactType, Job
 
 
 class Command(BaseCommand):
@@ -30,15 +30,15 @@ class Command(BaseCommand):
             help="Show what would be done without making changes",
         )
         parser.add_argument(
-            "--lecture-id",
+            "--job-id",
             type=int,
-            help="Only sync artifacts for a specific lecture ID",
+            help="Only sync artifacts for a specific job ID",
         )
 
     def handle(self, *args, **options):
         output_dir = Path(options["output_dir"])
         dry_run = options["dry_run"]
-        lecture_id = options.get("lecture_id")
+        job_id = options.get("job_id")
 
         if not output_dir.exists():
             raise CommandError(f"Output directory does not exist: {output_dir}")
@@ -50,10 +50,10 @@ class Command(BaseCommand):
             ".mmd": lambda _: ArtifactType.MERMAID_MINDMAP,
         }
 
-        # Get all lectures
-        lectures = Lecture.objects.all()
-        if lecture_id:
-            lectures = lectures.filter(id=lecture_id)
+        # Get all jobs
+        jobs = Job.objects.filter(status="completed")
+        if job_id:
+            jobs = jobs.filter(id=job_id)
 
         created_count = 0
         updated_count = 0
@@ -79,13 +79,11 @@ class Command(BaseCommand):
                 skipped_count += 1
                 continue
 
-            # Try to match file to a lecture by filename prefix
-            lecture = self._find_matching_lecture(file_path.name, lectures)
+            # Try to match file to a job by filename prefix
+            job = self._find_matching_job(file_path.name, jobs)
 
-            if not lecture:
-                self.stdout.write(
-                    self.style.WARNING(f"  No matching lecture for: {file_path.name}")
-                )
+            if not job:
+                self.stdout.write(self.style.WARNING(f"  No matching job for: {file_path.name}"))
                 skipped_count += 1
                 continue
 
@@ -93,19 +91,19 @@ class Command(BaseCommand):
 
             if dry_run:
                 # Check if artifact exists
-                existing = Artifact.objects.filter(lecture=lecture, file_path=file_path_str).first()
+                existing = Artifact.objects.filter(job=job, file_path=file_path_str).first()
                 if existing:
                     self.stdout.write(
-                        f"  Would update: {file_path.name} -> Lecture: {lecture.title}"
+                        f"  Would update: {file_path.name} -> Job: {job.title or job.label}"
                     )
                 else:
                     self.stdout.write(
-                        f"  Would create: {file_path.name} -> Lecture: {lecture.title}"
+                        f"  Would create: {file_path.name} -> Job: {job.title or job.label}"
                     )
             else:
                 # Create or update artifact
                 artifact, created = Artifact.objects.update_or_create(
-                    lecture=lecture,
+                    job=job,
                     file_path=file_path_str,
                     defaults={
                         "artifact_type": artifact_type,
@@ -119,14 +117,14 @@ class Command(BaseCommand):
                     self.stdout.write(
                         self.style.SUCCESS(
                             f"  Created: {file_path.name} ({artifact.get_artifact_type_display()}) "
-                            f"-> Lecture: {lecture.title}"
+                            f"-> Job: {job.title or job.label}"
                         )
                     )
                 else:
                     updated_count += 1
                     self.stdout.write(
                         f"  Updated: {file_path.name} ({artifact.get_artifact_type_display()}) "
-                        f"-> Lecture: {lecture.title}"
+                        f"-> Job: {job.title or job.label}"
                     )
 
         # Summary
@@ -151,10 +149,10 @@ class Command(BaseCommand):
             return ArtifactType.PDF_HANDOUT
         return None
 
-    def _find_matching_lecture(self, filename: str, lectures) -> Lecture | None:
-        """Find a lecture that matches the given filename.
+    def _find_matching_job(self, filename: str, jobs) -> Job | None:
+        """Find a job that matches the given filename.
 
-        Matches based on lecture title being a prefix of the filename.
+        Matches based on job title being a prefix of the filename.
         """
         # Strip extension and common suffixes
         name = filename
@@ -166,13 +164,15 @@ class Command(BaseCommand):
         base_name = name.rsplit(" - ", 1)[0] if " - " in name else name
 
         # Try to find exact title match first
-        for lecture in lectures:
-            if lecture.title == name or lecture.title == base_name:
-                return lecture
+        for job in jobs:
+            title = job.title or job.label
+            if title == name or title == base_name:
+                return job
 
         # Try prefix matching
-        for lecture in lectures:
-            if name.startswith(lecture.title) or base_name.startswith(lecture.title):
-                return lecture
+        for job in jobs:
+            title = job.title or job.label
+            if name.startswith(title) or base_name.startswith(title):
+                return job
 
         return None

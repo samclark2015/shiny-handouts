@@ -7,6 +7,7 @@ from typing import cast
 
 from core.tasks.config import broker
 from core.tasks.context import TaskContext
+from core.tasks.db import update_job_source_info
 from core.tasks.progress import update_job_progress
 from core.tasks.video import hash_file
 
@@ -31,9 +32,13 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
     # Load job settings and profile
     job = await Job.objects.select_related("user", "setting_profile").aget(id=job_id)
+    user_id = job.user_id
     enable_excel = job.enable_excel
     enable_vignette = job.enable_vignette
     enable_mindmap = job.enable_mindmap
+
+    # Update job with source_id early
+    await update_job_source_info(job_id, source_id)
 
     # Load settings from profile (if set)
     vignette_prompt = None
@@ -49,6 +54,7 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
     ctx = TaskContext(
         job_id=job_id,
+        user_id=user_id,
         source_id=source_id,
         input_type=input_type,
         input_data=input_dict,

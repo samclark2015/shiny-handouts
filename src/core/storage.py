@@ -63,8 +63,118 @@ def is_s3_enabled() -> bool:
     return config.use_s3 and bool(config.bucket_name)
 
 
+# =============================================================================
+# New user/job/source-based path helpers
+# =============================================================================
+
+
+def get_source_key(user_id: int, source_id: str, filename: str) -> str:
+    """Generate an S3 key for source files (video, frames).
+
+    Structure: {user_id}/sources/{source_id}/{filename}
+
+    Args:
+        user_id: The user's ID
+        source_id: The source identifier (content hash or panopto delivery ID)
+        filename: The filename (e.g., 'video.mp4' or frame UUID)
+
+    Returns:
+        The S3 key for the source file
+    """
+    return f"{user_id}/sources/{source_id}/{filename}"
+
+
+def get_source_local_path(user_id: int, source_id: str, filename: str) -> str:
+    """Get local filesystem path for source files.
+
+    Structure: {FRAMES_DIR}/{user_id}/sources/{source_id}/{filename}
+
+    Args:
+        user_id: The user's ID
+        source_id: The source identifier
+        filename: The filename
+
+    Returns:
+        The local filesystem path
+    """
+    base_dir = Path(settings.FRAMES_DIR)
+    return str(base_dir / str(user_id) / "sources" / source_id / filename)
+
+
+def get_job_key(user_id: int, job_id: int, filename: str) -> str:
+    """Generate an S3 key for job artifacts (PDF, Excel, etc.).
+
+    Structure: {user_id}/jobs/{job_id}/{filename}
+
+    Args:
+        user_id: The user's ID
+        job_id: The job's ID
+        filename: The filename (e.g., 'handout.pdf')
+
+    Returns:
+        The S3 key for the job artifact
+    """
+    return f"{user_id}/jobs/{job_id}/{filename}"
+
+
+def get_job_local_path(user_id: int, job_id: int, filename: str) -> str:
+    """Get local filesystem path for job artifacts.
+
+    Structure: {OUTPUT_DIR}/{user_id}/jobs/{job_id}/{filename}
+
+    Args:
+        user_id: The user's ID
+        job_id: The job's ID
+        filename: The filename
+
+    Returns:
+        The local filesystem path
+    """
+    base_dir = Path(settings.OUTPUT_DIR)
+    return str(base_dir / str(user_id) / "jobs" / str(job_id) / filename)
+
+
+def get_source_path(user_id: int, source_id: str, filename: str) -> str:
+    """Get storage path for source files (S3 key or local path).
+
+    Args:
+        user_id: The user's ID
+        source_id: The source identifier
+        filename: The filename
+
+    Returns:
+        S3 key if S3 enabled, otherwise local path
+    """
+    if is_s3_enabled():
+        return get_source_key(user_id, source_id, filename)
+    return get_source_local_path(user_id, source_id, filename)
+
+
+def get_job_path(user_id: int, job_id: int, filename: str) -> str:
+    """Get storage path for job artifacts (S3 key or local path).
+
+    Args:
+        user_id: The user's ID
+        job_id: The job's ID
+        filename: The filename
+
+    Returns:
+        S3 key if S3 enabled, otherwise local path
+    """
+    if is_s3_enabled():
+        return get_job_key(user_id, job_id, filename)
+    return get_job_local_path(user_id, job_id, filename)
+
+
+# =============================================================================
+# Legacy path helpers (deprecated - use get_source_key/get_job_key instead)
+# =============================================================================
+
+
 def get_s3_key(storage_type: StorageType, filename: str, source_id: str | None = None) -> str:
     """Generate an S3 key for a file.
+
+    DEPRECATED: Use get_source_key() for source files or get_job_key() for artifacts.
 
     Args:
         storage_type: Type of storage (input, output, frames)
@@ -90,6 +200,8 @@ def get_s3_key(storage_type: StorageType, filename: str, source_id: str | None =
 
 def get_local_path(storage_type: StorageType, filename: str, source_id: str | None = None) -> str:
     """Get local filesystem path for a file.
+
+    DEPRECATED: Use get_source_local_path() or get_job_local_path() instead.
 
     Args:
         storage_type: Type of storage (input, output, frames)
@@ -482,6 +594,96 @@ async def list_files(
                     files.append(filename)
 
     return files
+
+
+async def upload_source_file(
+    local_path: str,
+    user_id: int,
+    source_id: str,
+    filename: str | None = None,
+) -> str:
+    """Upload a file to user's source storage.
+
+    Args:
+        local_path: Path to the local file to upload
+        user_id: The user's ID
+        source_id: The source identifier
+        filename: Optional filename (defaults to basename of local_path)
+
+    Returns:
+        The storage path (S3 key or local path)
+    """
+    if filename is None:
+        filename = os.path.basename(local_path)
+
+    if not is_s3_enabled():
+        dest_path = get_source_local_path(user_id, source_id, filename)
+        if local_path != dest_path:
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            if os.path.exists(local_path):
+                import shutil
+
+                shutil.copy2(local_path, dest_path)
+        return dest_path
+
+    config = get_storage_config()
+    s3_key = get_source_key(user_id, source_id, filename)
+
+    content_type, _ = mimetypes.guess_type(filename)
+
+    async with get_s3_client() as s3:
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
+
+        await s3.upload_file(local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None)
+
+    return s3_key
+
+
+async def upload_job_file(
+    local_path: str,
+    user_id: int,
+    job_id: int,
+    filename: str | None = None,
+) -> str:
+    """Upload a file to user's job storage.
+
+    Args:
+        local_path: Path to the local file to upload
+        user_id: The user's ID
+        job_id: The job's ID
+        filename: Optional filename (defaults to basename of local_path)
+
+    Returns:
+        The storage path (S3 key or local path)
+    """
+    if filename is None:
+        filename = os.path.basename(local_path)
+
+    if not is_s3_enabled():
+        dest_path = get_job_local_path(user_id, job_id, filename)
+        if local_path != dest_path:
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            if os.path.exists(local_path):
+                import shutil
+
+                shutil.copy2(local_path, dest_path)
+        return dest_path
+
+    config = get_storage_config()
+    s3_key = get_job_key(user_id, job_id, filename)
+
+    content_type, _ = mimetypes.guess_type(filename)
+
+    async with get_s3_client() as s3:
+        extra_args = {}
+        if content_type:
+            extra_args["ContentType"] = content_type
+
+        await s3.upload_file(local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None)
+
+    return s3_key
 
 
 def sync_upload_file(

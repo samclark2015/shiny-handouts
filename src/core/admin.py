@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Artifact, Job, Lecture
+from .models import Artifact, Job
 
 
 @admin.register(Job)
@@ -12,6 +12,7 @@ class JobAdmin(admin.ModelAdmin):
     list_display = (
         "id",
         "label",
+        "title",
         "user",
         "status",
         "progress",
@@ -21,17 +22,28 @@ class JobAdmin(admin.ModelAdmin):
         "completed_at",
     )
     list_filter = ("status", "input_type", "enable_excel", "enable_vignette", "created_at")
-    search_fields = ("label", "user__email", "taskiq_task_id")
+    search_fields = ("label", "title", "user__email", "taskiq_task_id", "source_id")
     ordering = ("-created_at",)
-    readonly_fields = ("created_at", "started_at", "completed_at", "taskiq_task_id")
+    readonly_fields = ("created_at", "started_at", "completed_at", "taskiq_task_id", "source_id")
     raw_id_fields = ("user",)
 
     fieldsets = (
         (
             None,
-            {"fields": ("user", "label", "status", "progress", "current_stage", "error_message")},
+            {
+                "fields": (
+                    "user",
+                    "label",
+                    "title",
+                    "status",
+                    "progress",
+                    "current_stage",
+                    "error_message",
+                )
+            },
         ),
         ("Input", {"fields": ("input_type", "input_data")}),
+        ("Source", {"fields": ("source_id", "video_path")}),
         (
             "Output Options",
             {
@@ -44,18 +56,6 @@ class JobAdmin(admin.ModelAdmin):
     )
 
 
-@admin.register(Lecture)
-class LectureAdmin(admin.ModelAdmin):
-    """Admin configuration for Lecture model."""
-
-    list_display = ("id", "title", "user", "date", "created_at")
-    list_filter = ("date", "created_at")
-    search_fields = ("title", "user__email", "source_id")
-    ordering = ("-date",)
-    readonly_fields = ("created_at",)
-    raw_id_fields = ("user", "job")
-
-
 @admin.register(Artifact)
 class ArtifactAdmin(admin.ModelAdmin):
     """Admin configuration for Artifact model."""
@@ -64,12 +64,12 @@ class ArtifactAdmin(admin.ModelAdmin):
         "id",
         "file_name",
         "artifact_type",
-        "lecture",
+        "job",
         "file_size",
         "created_at",
     )
     list_filter = ("artifact_type", "created_at")
-    search_fields = ("file_name", "lecture__title")
+    search_fields = ("file_name", "job__title", "job__label")
     ordering = ("-created_at",)
     readonly_fields = ("created_at",)
-    raw_id_fields = ("lecture",)
+    raw_id_fields = ("job",)

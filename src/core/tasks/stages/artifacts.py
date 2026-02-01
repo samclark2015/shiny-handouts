@@ -15,8 +15,15 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
-from core.storage import is_s3_enabled, temp_download, upload_bytes, upload_file
-from core.tasks.config import OUT_DIR, broker
+from core.storage import (
+    get_job_key,
+    get_job_local_path,
+    get_s3_client,
+    get_storage_config,
+    is_s3_enabled,
+    temp_download,
+)
+from core.tasks.config import broker
 from core.tasks.context import TaskContext
 from core.tasks.db import create_artifact
 from core.tasks.progress import update_job_progress
@@ -32,6 +39,7 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
     """
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+    user_id = ctx.user_id
 
     if not ctx.enable_excel:
         return {}
@@ -150,15 +158,36 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
         await asyncio.to_thread(wb.save, tmp_path)
 
         # Upload to storage
-        storage_path = await upload_file(tmp_path, "output", output_filename)
+        if is_s3_enabled():
+            config = get_storage_config()
+            s3_key = get_job_key(user_id, job_id, output_filename)
 
-        # Clean up temp file
-        os.unlink(tmp_path)
+            async with get_s3_client() as s3:
+                await s3.upload_file(
+                    tmp_path,
+                    config.bucket_name,
+                    s3_key,
+                    ExtraArgs={
+                        "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    },
+                )
+
+            storage_path = s3_key
+        else:
+            local_path = get_job_local_path(user_id, job_id, output_filename)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            os.rename(tmp_path, local_path)
+            storage_path = local_path
+            tmp_path = None  # Don't delete, we moved it
+
+        # Clean up temp file if still exists
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
         # Create artifact
         from core.models import ArtifactType
 
-        await create_artifact(job_id, ArtifactType.EXCEL_STUDY_TABLE, storage_path, ctx.source_id)
+        await create_artifact(job_id, ArtifactType.EXCEL_STUDY_TABLE, storage_path)
 
         return {"xlsx_path": storage_path}
     except Exception as e:
@@ -174,6 +203,7 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
     """
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+    user_id = ctx.user_id
 
     if not ctx.enable_vignette:
         return {}
@@ -219,15 +249,34 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
                 return {}
 
         # Upload to storage
-        storage_path = await upload_file(tmp_path, "output", output_filename)
+        if is_s3_enabled():
+            config = get_storage_config()
+            s3_key = get_job_key(user_id, job_id, output_filename)
 
-        # Clean up temp file
-        os.unlink(tmp_path)
+            async with get_s3_client() as s3:
+                await s3.upload_file(
+                    tmp_path,
+                    config.bucket_name,
+                    s3_key,
+                    ExtraArgs={"ContentType": "application/pdf"},
+                )
+
+            storage_path = s3_key
+        else:
+            local_path = get_job_local_path(user_id, job_id, output_filename)
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            os.rename(tmp_path, local_path)
+            storage_path = local_path
+            tmp_path = None
+
+        # Clean up temp file if still exists
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
         # Create artifact
         from core.models import ArtifactType
 
-        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, storage_path, ctx.source_id)
+        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, storage_path)
 
         return {"vignette_path": storage_path}
     except Exception as e:
@@ -243,6 +292,7 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
     """
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+    user_id = ctx.user_id
 
     if not ctx.enable_mindmap:
         return {}
@@ -280,18 +330,37 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
                 safe_title = f"Mindmap {i + 1}"
 
             mindmap_filename = f"{base_name} - {safe_title}.mmd"
+            mermaid_bytes = mermaid_code.encode("utf-8")
 
             # Upload mermaid code as text
-            storage_path = await upload_bytes(
-                mermaid_code.encode("utf-8"),
-                "output",
-                mindmap_filename,
-                content_type="text/plain",
-            )
+            if is_s3_enabled():
+                config = get_storage_config()
+                s3_key = get_job_key(user_id, job_id, mindmap_filename)
+
+                async with get_s3_client() as s3:
+                    await s3.put_object(
+                        Bucket=config.bucket_name,
+                        Key=s3_key,
+                        Body=mermaid_bytes,
+                        ContentType="text/plain",
+                    )
+
+                storage_path = s3_key
+            else:
+                local_path = get_job_local_path(user_id, job_id, mindmap_filename)
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                with open(local_path, "wb") as f:
+                    f.write(mermaid_bytes)
+                storage_path = local_path
 
             # Create artifact for each mindmap
-            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, storage_path, ctx.source_id)
+            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, storage_path)
             mindmap_paths.append(storage_path)
+
+        return {"mindmap_paths": mindmap_paths}
+    except Exception as e:
+        logging.exception(f"Failed to generate mindmap: {e}")
+        return {}
 
         return {"mindmap_paths": mindmap_paths}
     except Exception as e:
@@ -312,7 +381,7 @@ async def generate_artifacts_task(data: dict) -> dict:
         ctx.outputs = {}
 
     pdf_path = ctx.outputs.get("pdf_path")
-    if not pdf_path or not os.path.exists(pdf_path):
+    if not pdf_path:
         return ctx.to_dict()
 
     # Queue all tasks with their names for progress reporting

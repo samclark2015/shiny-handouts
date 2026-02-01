@@ -1,7 +1,7 @@
 """
 Database models for Handout Generator core functionality.
 
-Provides Job, Lecture, and Artifact models for pipeline processing.
+Provides Job and Artifact models for pipeline processing.
 """
 
 import os
@@ -44,6 +44,9 @@ class Job(models.Model):
 
     # Job metadata
     label = models.CharField(max_length=255)
+    title = models.CharField(max_length=255, blank=True, null=True)
+    source_id = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+    video_path = models.CharField(max_length=512, blank=True, null=True)
     status = models.CharField(
         max_length=20,
         choices=JobStatus.choices,
@@ -122,46 +125,11 @@ class Job(models.Model):
         return int(self.progress * 100)
 
 
-class Lecture(models.Model):
-    """Lecture model representing a processed video."""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="lectures",
-    )
-    job = models.OneToOneField(
-        Job,
-        on_delete=models.SET_NULL,
-        blank=True,
-        null=True,
-        related_name="lecture",
-    )
-
-    # Lecture metadata
-    title = models.CharField(max_length=255)
-    source_id = models.CharField(max_length=255, db_index=True)
-    date = models.DateTimeField()
-
-    # Processing metadata
-    video_path = models.CharField(max_length=512, blank=True, null=True)
-    created_at = models.DateTimeField(default=timezone.now)
-
-    class Meta:
-        db_table = "lectures"
-        ordering = ["-date"]
-        verbose_name = "lecture"
-        verbose_name_plural = "lectures"
-
-    def __str__(self):
-        return f"{self.title}"
-
-
 class Artifact(models.Model):
     """Artifact model for generated files."""
 
-    lecture = models.ForeignKey(
-        Lecture,
+    job = models.ForeignKey(
+        Job,
         on_delete=models.CASCADE,
         related_name="artifacts",
     )

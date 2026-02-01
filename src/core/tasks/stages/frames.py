@@ -9,8 +9,15 @@ from uuid import uuid4
 
 import cv2
 
-from core.storage import is_s3_enabled, temp_download, upload_file
-from core.tasks.config import FRAME_SCALE_FACTOR, FRAME_SIMILARITY_THRESHOLD, FRAMES_DIR, broker
+from core.storage import (
+    get_s3_client,
+    get_source_key,
+    get_source_local_path,
+    get_storage_config,
+    is_s3_enabled,
+    temp_download,
+)
+from core.tasks.config import FRAME_SCALE_FACTOR, FRAME_SIMILARITY_THRESHOLD, broker
 from core.tasks.context import TaskContext
 from core.tasks.frames import compare_frames_edges, preprocess_frame_for_comparison
 from core.tasks.progress import update_job_progress
@@ -24,6 +31,7 @@ async def match_frames_task(data: dict) -> dict:
 
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+    user_id = ctx.user_id
     stage_name = "match_frames"
 
     await update_job_progress(job_id, stage_name, 0, "Matching frames")
@@ -34,10 +42,6 @@ async def match_frames_task(data: dict) -> dict:
         return ctx.to_dict()
 
     captions = [Caption(**c) for c in ctx.captions]
-    last_frame = None
-    last_frame_gs = None
-    cum_captions = []
-    pairs = []
 
     # Get video path - may need to download from S3
     video_path = ctx.get_video_path()
@@ -46,11 +50,11 @@ async def match_frames_task(data: dict) -> dict:
     if is_s3_enabled():
         async with temp_download(video_path) as local_video:
             pairs = await _process_video_frames(
-                local_video, captions, ctx.source_id, job_id, stage_name
+                local_video, captions, user_id, ctx.source_id, job_id, stage_name
             )
     else:
         pairs = await _process_video_frames(
-            video_path, captions, ctx.source_id, job_id, stage_name
+            video_path, captions, user_id, ctx.source_id, job_id, stage_name
         )
 
     ctx.slides = pairs
@@ -63,6 +67,7 @@ async def match_frames_task(data: dict) -> dict:
 async def _process_video_frames(
     video_path: str,
     captions: list[Caption],
+    user_id: int,
     source_id: str,
     job_id: int,
     stage_name: str,
@@ -72,6 +77,7 @@ async def _process_video_frames(
     Args:
         video_path: Local path to video file
         captions: List of captions to match
+        user_id: User ID for organizing frames
         source_id: Source ID for organizing frames
         job_id: Job ID for progress updates
         stage_name: Stage name for progress updates
@@ -87,14 +93,9 @@ async def _process_video_frames(
     stream = cv2.VideoCapture()
     stream.open(video_path)
 
-    # Create temp directory for frames if using S3, otherwise use frames dir
-    if is_s3_enabled():
-        temp_dir = TemporaryDirectory()
-        frame_path = temp_dir.name
-    else:
-        frame_path = os.path.join(FRAMES_DIR, source_id)
-        os.makedirs(frame_path, exist_ok=True)
-        temp_dir = None
+    # Create local directory for frames
+    frame_dir = os.path.dirname(get_source_local_path(user_id, source_id, "frame.jpg"))
+    os.makedirs(frame_dir, exist_ok=True)
 
     try:
         for idx, cap in enumerate(captions):
@@ -122,17 +123,23 @@ async def _process_video_frames(
 
                 # Save frame locally first
                 frame_filename = f"{uuid4()}.jpg"
-                local_frame_path = os.path.join(frame_path, frame_filename)
+                local_frame_path = get_source_local_path(user_id, source_id, frame_filename)
                 cv2.imwrite(local_frame_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
 
                 # Upload to S3 if enabled
                 if is_s3_enabled():
-                    image_path = await upload_file(
-                        local_frame_path,
-                        "frames",
-                        frame_filename,
-                        source_id=source_id,
-                    )
+                    config = get_storage_config()
+                    s3_key = get_source_key(user_id, source_id, frame_filename)
+
+                    async with get_s3_client() as s3:
+                        await s3.upload_file(
+                            local_frame_path,
+                            config.bucket_name,
+                            s3_key,
+                            ExtraArgs={"ContentType": "image/jpeg"},
+                        )
+
+                    image_path = s3_key
                 else:
                     image_path = local_frame_path
 
@@ -148,8 +155,6 @@ async def _process_video_frames(
 
     finally:
         stream.release()
-        if temp_dir:
-            temp_dir.cleanup()
 
     return pairs
 

@@ -1,6 +1,6 @@
-{# Artifact list partial for a specific lecture #}
+{# Artifact list partial for a specific job #}
 <div class="space-y-1">
-    {% for artifact in lecture.artifacts.all %}
+    {% for artifact in job.artifacts.all %}
         <div class="flex items-center space-x-2 text-sm p-2 hover:bg-gray-50 rounded">
             {% if artifact.artifact_type == 'pdf_handout' %}
                 <span class="text-red-600">📄</span>

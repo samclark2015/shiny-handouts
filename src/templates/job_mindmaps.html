@@ -1,14 +1,14 @@
 {% extends "base.html" %} 
 {% load static %}
-{% block title %}{{ lecture.title }} - Mindmaps{% endblock %}
+{% block title %}{{ job.title|default:job.label }} - Mindmaps{% endblock %}
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <script src="{% static 'js/mindmap-utils.js' %}"></script>
 {% endblock %} {% block body %}
 <div class="mindmaps-container" x-data="mindmapsViewer()" x-init="init()">
   <div class="mindmaps-header">
-    <h1>🧠 {{ lecture.title }}</h1>
-    <p>{{ mindmaps|length }} mindmap{{ mindmaps|pluralize }} generated for this lecture</p>
+    <h1>🧠 {{ job.title|default:job.label }}</h1>
+    <p>{{ mindmaps|length }} mindmap{{ mindmaps|pluralize }} generated for this job</p>
     <div class="header-actions mindmap-actions">
       <a href="{% url 'main:index' %}" title="Go back">← Back to Dashboard</a>
     </div>
@@ -42,7 +42,7 @@
   <div class="no-mindmaps">
     <i class="fa-solid fa-brain"></i>
     <h3>No mindmaps yet</h3>
-    <p>Mindmaps will appear here once they are generated for this lecture.</p>
+    <p>Mindmaps will appear here once they are generated for this job.</p>
   </div>
   {% endif %}
 </div>

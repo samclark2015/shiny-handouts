@@ -1,24 +1,24 @@
-{# Lecture title with inline edit functionality #}
-<span class="lecture-title-display">
-    {{ lecture.title }}
+{# Job title with inline edit functionality #}
+<span class="job-title-display">
+    {{ job.title|default:job.label }}
     <button type="button"
-            onclick="editLectureTitle({{ lecture.id }})"
+            onclick="editJobTitle({{ job.id }})"
             class="ml-2 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
-            title="Rename lecture">
+            title="Rename job">
         <i class="fa-solid fa-pen text-xs"></i>
     </button>
 </span>
-<form id="lecture-title-form-{{ lecture.id }}"
-      class="lecture-title-form hidden inline-flex items-center gap-2"
-      hx-post="{% url 'api:rename_lecture' lecture.id %}"
-      hx-target="#lecture-title-{{ lecture.id }}"
+<form id="job-title-form-{{ job.id }}"
+      class="job-title-form hidden inline-flex items-center gap-2"
+      hx-post="{% url 'api:rename_job' job.id %}"
+      hx-target="#job-title-{{ job.id }}"
       hx-swap="innerHTML"
       onclick="event.stopPropagation()"
       onkeydown="event.stopPropagation()">
     {% csrf_token %}
     <input type="text"
            name="title"
-           value="{{ lecture.title }}"
+           value="{{ job.title|default:job.label }}"
            class="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
            required
            onclick="event.stopPropagation()"
@@ -30,7 +30,7 @@
         <i class="fa-solid fa-check"></i>
     </button>
     <button type="button"
-            onclick="cancelEditLectureTitle({{ lecture.id }})"
+            onclick="cancelEditJobTitle({{ job.id }})"
             class="text-red-600 hover:text-red-800"
             title="Cancel">
         <i class="fa-solid fa-xmark"></i>
@@ -38,10 +38,10 @@
 </form>
 
 <script>
-function editLectureTitle(lectureId) {
+function editJobTitle(jobId) {
     event.stopPropagation();
-    const display = document.querySelector(`#lecture-title-${lectureId} .lecture-title-display`);
-    const form = document.querySelector(`#lecture-title-form-${lectureId}`);
+    const display = document.querySelector(`#job-title-${jobId} .job-title-display`);
+    const form = document.querySelector(`#job-title-form-${jobId}`);
     const input = form.querySelector('input[name="title"]');
     
     display.classList.add('hidden');
@@ -50,10 +50,10 @@ function editLectureTitle(lectureId) {
     input.select();
 }
 
-function cancelEditLectureTitle(lectureId) {
+function cancelEditJobTitle(jobId) {
     event.stopPropagation();
-    const display = document.querySelector(`#lecture-title-${lectureId} .lecture-title-display`);
-    const form = document.querySelector(`#lecture-title-form-${lectureId}`);
+    const display = document.querySelector(`#job-title-${jobId} .job-title-display`);
+    const form = document.querySelector(`#job-title-form-${jobId}`);
     
     form.classList.add('hidden');
     display.classList.remove('hidden');

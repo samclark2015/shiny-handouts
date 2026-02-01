@@ -8,7 +8,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 
-from core.models import Artifact, ArtifactType, Job, JobStatus, Lecture
+from core.models import Artifact, ArtifactType, Job, JobStatus
 from core.storage import (
     download_bytes,
     generate_presigned_url,
@@ -30,16 +30,18 @@ def index(request):
         .order_by("-created_at")[:50]
     )
 
-    # Get user's lectures grouped by date
-    lectures = Lecture.objects.filter(user=request.user).order_by("-date")
+    # Get user's completed jobs grouped by date
+    completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
+        "-created_at"
+    )
 
-    # Group lectures by date
-    lectures_by_date = {}
-    for lecture in lectures:
-        date_key = lecture.date.strftime("%Y-%m-%d")
-        if date_key not in lectures_by_date:
-            lectures_by_date[date_key] = []
-        lectures_by_date[date_key].append(lecture)
+    # Group jobs by date
+    jobs_by_date = {}
+    for job in completed_jobs:
+        date_key = job.created_at.strftime("%Y-%m-%d")
+        if date_key not in jobs_by_date:
+            jobs_by_date[date_key] = []
+        jobs_by_date[date_key].append(job)
 
     # Get user's setting profiles
     from accounts.models import SettingProfile
@@ -52,7 +54,7 @@ def index(request):
         "index.html",
         {
             "jobs": jobs,
-            "lectures_by_date": lectures_by_date,
+            "jobs_by_date": jobs_by_date,
             "user": request.user,
             "profiles": profiles,
             "default_profile": default_profile,
@@ -65,12 +67,10 @@ def serve_file(request, filename: str):
     """Serve generated files from storage (local or S3)."""
     if is_s3_enabled():
         # For S3, generate a presigned URL and redirect
-        s3_key = f"{settings.S3_OUTPUT_PREFIX}{filename}"
-
         # Verify the artifact exists and belongs to user
         artifact = Artifact.objects.filter(
             file_name=filename,
-            lecture__user=request.user,
+            job__user=request.user,
         ).first()
 
         if not artifact:
@@ -84,17 +84,18 @@ def serve_file(request, filename: str):
         )
         return HttpResponseRedirect(presigned_url)
 
-    # Local storage
-    file_path = os.path.join(settings.OUTPUT_DIR, filename)
+    # Local storage - find artifact to get correct path
+    artifact = Artifact.objects.filter(
+        file_name=filename,
+        job__user=request.user,
+    ).first()
 
-    if not os.path.exists(file_path):
+    if not artifact:
         raise Http404("File not found")
 
-    # Security check: ensure file is within OUTPUT_DIR
-    real_path = os.path.realpath(file_path)
-    real_output_dir = os.path.realpath(settings.OUTPUT_DIR)
+    file_path = artifact.file_path
 
-    if not real_path.startswith(real_output_dir):
+    if not os.path.exists(file_path):
         raise Http404("File not found")
 
     return FileResponse(
@@ -143,7 +144,7 @@ def _get_file_content(user, filename: str) -> str | None:
         # For S3, find the artifact and download content
         artifact = Artifact.objects.filter(
             file_name=filename,
-            lecture__user=user,
+            job__user=user,
         ).first()
 
         if not artifact:
@@ -155,17 +156,18 @@ def _get_file_content(user, filename: str) -> str | None:
         except Exception:
             return None
 
-    # Local storage
-    file_path = os.path.join(settings.OUTPUT_DIR, filename)
+    # Local storage - find artifact to get correct path
+    artifact = Artifact.objects.filter(
+        file_name=filename,
+        job__user=user,
+    ).first()
 
-    if not os.path.exists(file_path):
+    if not artifact:
         return None
 
-    # Security check: ensure file is within OUTPUT_DIR
-    real_path = os.path.realpath(file_path)
-    real_output_dir = os.path.realpath(settings.OUTPUT_DIR)
+    file_path = artifact.file_path
 
-    if not real_path.startswith(real_output_dir):
+    if not os.path.exists(file_path):
         return None
 
     with open(file_path, "r", encoding="utf-8") as f:
@@ -173,19 +175,19 @@ def _get_file_content(user, filename: str) -> str | None:
 
 
 @login_required
-def lecture_mindmaps(request, lecture_id: int):
-    """Display all mindmaps for a given lecture."""
-    lecture = get_object_or_404(Lecture, id=lecture_id, user=request.user)
+def job_mindmaps(request, job_id: int):
+    """Display all mindmaps for a given job."""
+    job = get_object_or_404(Job, id=job_id, user=request.user)
 
-    # Get all mindmap artifacts for this lecture
-    mindmap_artifacts = lecture.artifacts.filter(artifact_type=ArtifactType.MERMAID_MINDMAP)
+    # Get all mindmap artifacts for this job
+    mindmap_artifacts = job.artifacts.filter(artifact_type=ArtifactType.MERMAID_MINDMAP)
 
     # Read the mermaid code for each mindmap
     mindmaps = []
     for artifact in mindmap_artifacts:
         mermaid_code = _get_artifact_content(artifact)
         if mermaid_code:
-            # Extract title from filename (remove base lecture name prefix if present)
+            # Extract title from filename (remove base job name prefix if present)
             title = os.path.splitext(artifact.file_name)[0]
             # Try to get just the mindmap-specific part after " - "
             if " - " in title:
@@ -202,9 +204,9 @@ def lecture_mindmaps(request, lecture_id: int):
 
     return render(
         request,
-        "lecture_mindmaps.html",
+        "job_mindmaps.html",
         {
-            "lecture": lecture,
+            "job": job,
             "mindmaps": mindmaps,
         },
     )
@@ -226,8 +228,8 @@ def _get_artifact_content(artifact: Artifact) -> str | None:
         except Exception:
             return None
 
-    # Local storage
-    file_path = os.path.join(settings.OUTPUT_DIR, artifact.file_name)
+    # Local storage - use artifact's file_path directly
+    file_path = artifact.file_path
     if os.path.exists(file_path):
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read()

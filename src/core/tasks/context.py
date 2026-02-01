@@ -13,6 +13,7 @@ class TaskContext:
     """Context object that flows through the pipeline stages."""
 
     job_id: int
+    user_id: int  # User ID for storage path building
     source_id: str
     input_type: str  # 'url', 'upload', 'panopto'
     input_data: dict  # Serialized input configuration
