@@ -55,13 +55,20 @@
                         
                         {% for group in artifacts_by_type %}
                         {% if group.grouper == 'mermaid_mindmap' %}
+                        {% for artifact in group.list %}
                         <div class="flex items-center space-x-2 text-sm">
-                            <a href="{% url 'main:lecture_mindmaps' lecture.id %}" target="_blank"
+                            <a href="{% url 'main:render_mindmap' artifact.file_name %}" target="_blank"
                                 class="text-blue-600 hover:text-blue-800 hover:underline truncate flex-1">
                                 <span class="text-teal-600">🧠</span>
-                                <span class="text-gray-500">Mindmaps ({{ group.list|length }})</span>
+                                <span class="text-gray-500">{{ artifact.file_name|default:"Mindmap" }}</span>
                             </a>
+                            {% if artifact.file_size %}
+                            <span class="text-gray-400 text-xs">
+                                {{ artifact.file_size|filesizeformat }}
+                            </span>
+                            {% endif %}
                         </div>
+                        {% endfor %}
                         {% endif %}
                         {% endfor %}
                     </div>
