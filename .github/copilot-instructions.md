@@ -35,8 +35,8 @@
 
 ```
 shiny-handouts/
+├── manage.py                     # Django CLI entry point
 ├── src/                          # Django project root
-│   ├── manage.py                 # Django CLI entry point
 │   ├── handout_generator/        # Django project settings
 │   │   ├── settings.py           # Main configuration
 │   │   ├── urls.py               # Root URL configuration
@@ -192,7 +192,7 @@ Job progress uses Server-Sent Events:
 
 ```bash
 # Terminal 1: Django dev server
-cd src && python manage.py runserver
+python manage.py runserver
 
 # Terminal 2: Taskiq worker
 taskiq worker core.tasks:broker --workers 2
@@ -210,8 +210,8 @@ docker compose up  # Starts web, taskiq-worker, db, redis
 ### Database Migrations
 
 ```bash
-python src/manage.py makemigrations
-python src/manage.py migrate
+python manage.py makemigrations
+python manage.py migrate
 ```
 
 ## Common Pitfalls to Avoid

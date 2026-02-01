@@ -24,6 +24,7 @@ COPY ./requirements-dev.txt /app/requirements-dev.txt
 RUN if [ "$DEV_MODE" = "true" ]; then pip install --no-cache-dir -r /app/requirements-dev.txt; fi
 
 # Copy application code
+COPY ./manage.py /app/manage.py
 COPY ./src /app/src
 
 # Create data directories

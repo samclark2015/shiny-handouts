@@ -3,10 +3,15 @@
 
 import os
 import sys
+from pathlib import Path
 
 
 def main():
     """Run administrative tasks."""
+    # Add src directory to Python path
+    src_path = Path(__file__).resolve().parent / "src"
+    sys.path.insert(0, str(src_path))
+
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "handout_generator.settings")
     try:
         from django.core.management import execute_from_command_line

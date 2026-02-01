@@ -21,8 +21,8 @@ services:
       redis:
         condition: service_healthy
     command: >
-      sh -c "python /app/src/manage.py migrate &&
-             python /app/src/manage.py collectstatic --noinput &&
+      sh -c "python /app/manage.py migrate &&
+             python /app/manage.py collectstatic --noinput &&
              gunicorn --chdir /app/src -w 4 -b 0.0.0.0:8000 handout_generator.wsgi:application"
 
   # Taskiq worker for background tasks
