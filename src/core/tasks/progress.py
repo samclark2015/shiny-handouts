@@ -117,23 +117,20 @@ async def update_job_label(job_id: int, label: str) -> None:
 
 async def mark_job_completed(job_id: int, outputs: dict) -> None:
     """Mark a job as completed in the database."""
-    from core.models import Job, JobStatus, Lecture
+    from core.models import Job, JobStatus
 
     try:
         job = await Job.objects.select_related("user").aget(id=job_id)
         job.status = JobStatus.COMPLETED
         job.progress = 1.0
         job.completed_at = datetime.now(UTC)
-        await job.asave(update_fields=["status", "progress", "completed_at"])
 
-        # Update lecture source_id if it exists
-        try:
-            lecture = await Lecture.objects.aget(job=job)
-            if "source_id" in outputs:
-                lecture.source_id = outputs["source_id"]
-                await lecture.asave(update_fields=["source_id"])
-        except Lecture.DoesNotExist:
-            pass
+        # Update source_id on job if provided
+        if "source_id" in outputs:
+            job.source_id = outputs["source_id"]
+            await job.asave(update_fields=["status", "progress", "completed_at", "source_id"])
+        else:
+            await job.asave(update_fields=["status", "progress", "completed_at"])
 
         # Publish completion
         await publish_progress(job_id, "completed", 1.0, "Job completed successfully")

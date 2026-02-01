@@ -19,7 +19,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from core.models import Job, JobStatus, Lecture
+from core.models import Job, JobStatus
 
 APP_ID = os.getenv("GITHUB_APP_ID", "")
 INSTALLATION_ID = os.getenv("GITHUB_INSTALLATION_ID", "")
@@ -31,6 +31,8 @@ REPO = os.getenv("REPO", "")
 @login_required
 def upload_file(request):
     """Handle file upload and start processing."""
+    from core.storage import is_s3_enabled, sync_upload_file
+
     if "file" not in request.FILES:
         return render(request, "partials/error.html", {"message": "No file provided"}, status=400)
 
@@ -43,15 +45,21 @@ def upload_file(request):
     enable_vignette = request.POST.get("enable_vignette", "on") == "on"
     profile_id = request.POST.get("profile_id", "").strip()
 
-    # Save the file
+    # Save the file locally first
     filename = get_valid_filename(file.name)
-    file_path = os.path.join(settings.INPUT_DIR, filename)
+    local_path = os.path.join(settings.INPUT_DIR, filename)
 
     os.makedirs(settings.INPUT_DIR, exist_ok=True)
 
-    with open(file_path, "wb+") as destination:
+    with open(local_path, "wb+") as destination:
         for chunk in file.chunks():
             destination.write(chunk)
+
+    # Upload to S3 if enabled, otherwise use local path
+    if is_s3_enabled():
+        storage_path = sync_upload_file(local_path, "input", filename)
+    else:
+        storage_path = local_path
 
     # Get setting profile if specified
     from accounts.models import SettingProfile
@@ -69,7 +77,7 @@ def upload_file(request):
         label=filename,
         status=JobStatus.PENDING,
         input_type="upload",
-        input_data=json.dumps({"path": file_path, "filename": filename}),
+        input_data=json.dumps({"path": storage_path, "filename": filename}),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
         setting_profile=setting_profile,
@@ -210,18 +218,21 @@ def get_job(request, job_id: int):
 
     # If job just completed, also refresh the file browser via OOB swap
     if job.status == JobStatus.COMPLETED:
-        lectures = Lecture.objects.filter(user=request.user).order_by("-date")
-        lectures_by_date = {}
-        for lecture in lectures:
-            date_key = lecture.date.strftime("%Y-%m-%d")
-            if date_key not in lectures_by_date:
-                lectures_by_date[date_key] = []
-            lectures_by_date[date_key].append(lecture)
+        completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
+            "-created_at"
+        )
+
+        jobs_by_date = {}
+        for completed_job in completed_jobs:
+            date_key = completed_job.created_at.strftime("%Y-%m-%d")
+            if date_key not in jobs_by_date:
+                jobs_by_date[date_key] = []
+            jobs_by_date[date_key].append(completed_job)
 
         file_browser = render(
             request,
             "partials/file_browser.html",
-            {"lectures_by_date": lectures_by_date, "oob": True},
+            {"jobs_by_date": jobs_by_date, "oob": True},
         ).content.decode()
         response_html += file_browser
 
@@ -285,41 +296,43 @@ def get_jobs(request):
 @login_required
 def get_files(request):
     """Get file browser for HTMX."""
-    lectures = Lecture.objects.filter(user=request.user).order_by("-date")
+    completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
+        "-created_at"
+    )
 
-    # Group lectures by date
-    lectures_by_date = {}
-    for lecture in lectures:
-        date_key = lecture.date.strftime("%Y-%m-%d")
-        if date_key not in lectures_by_date:
-            lectures_by_date[date_key] = []
-        lectures_by_date[date_key].append(lecture)
+    # Group jobs by date
+    jobs_by_date = {}
+    for job in completed_jobs:
+        date_key = job.created_at.strftime("%Y-%m-%d")
+        if date_key not in jobs_by_date:
+            jobs_by_date[date_key] = []
+        jobs_by_date[date_key].append(job)
 
-    return render(request, "partials/file_browser.html", {"lectures_by_date": lectures_by_date})
+    return render(request, "partials/file_browser.html", {"jobs_by_date": jobs_by_date})
 
 
 @require_GET
 @login_required
-def get_lecture_artifacts(request, lecture_id: int):
-    """Get artifacts for a specific lecture."""
-    lecture = get_object_or_404(Lecture, id=lecture_id, user=request.user)
-    return render(request, "partials/artifact_list.html", {"lecture": lecture})
+def get_job_artifacts(request, job_id: int):
+    """Get artifacts for a specific job."""
+    job = get_object_or_404(Job, id=job_id, user=request.user)
+    return render(request, "partials/artifact_list.html", {"job": job})
 
 
 @require_POST
 @login_required
-def rename_lecture(request, lecture_id: int):
-    """Rename a lecture."""
-    lecture = get_object_or_404(Lecture, id=lecture_id, user=request.user)
+def rename_job(request, job_id: int):
+    """Rename a job's title."""
+    job = get_object_or_404(Job, id=job_id, user=request.user)
     new_title = request.POST.get("title", "").strip()
 
     if not new_title:
         return HttpResponse("Title cannot be empty", status=400)
 
-    lecture.title = new_title
-    lecture.save(update_fields=["title"])
+    job.title = new_title
+    job.save(update_fields=["title"])
 
-    return render(request, "partials/lecture_title.html", {"lecture": lecture})
+    return render(request, "partials/job_title.html", {"job": job})
 
 
 @require_GET

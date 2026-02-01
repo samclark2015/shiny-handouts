@@ -160,6 +160,19 @@ INPUT_DIR = BASE_DIR.parent / "data" / "input"
 OUTPUT_DIR = BASE_DIR.parent / "data" / "output"
 FRAMES_DIR = BASE_DIR.parent / "data" / "frames"
 
+# S3 Storage Configuration
+USE_S3_STORAGE = os.environ.get("USE_S3_STORAGE", "false").lower() in ("true", "1", "yes")
+S3_BUCKET_NAME = os.environ.get("S3_BUCKET_NAME", "")
+S3_REGION = os.environ.get("S3_REGION", "us-east-1")
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "")  # For S3-compatible services (MinIO, etc.)
+S3_ACCESS_KEY_ID = os.environ.get("S3_ACCESS_KEY_ID", "") or os.environ.get("AWS_ACCESS_KEY_ID", "")
+S3_SECRET_ACCESS_KEY = os.environ.get("S3_SECRET_ACCESS_KEY", "") or os.environ.get("AWS_SECRET_ACCESS_KEY", "")
+
+# S3 key prefixes
+S3_INPUT_PREFIX = "input/"
+S3_OUTPUT_PREFIX = "output/"
+S3_FRAMES_PREFIX = "frames/"
+
 # Redis configuration
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 REDIS_CACHE_URL = os.environ.get("REDIS_CACHE_URL", "redis://localhost:6379/1")

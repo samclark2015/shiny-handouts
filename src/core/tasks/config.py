@@ -4,15 +4,16 @@ Configuration and constants for the task pipeline.
 
 import os
 
+from django.conf import settings
 from taskiq_pipelines import PipelineMiddleware
 from taskiq_redis import ListQueueBroker, RedisAsyncResultBackend
 
 from core.middleware import PipelineErrorMiddleware
 
-# Directory configuration
-IN_DIR = os.path.join("data", "input")
-OUT_DIR = os.path.join("data", "output")
-FRAMES_DIR = os.path.join("data", "frames")
+# Directory configuration (local paths, used for temp storage when S3 is enabled)
+IN_DIR = str(settings.INPUT_DIR)
+OUT_DIR = str(settings.OUTPUT_DIR)
+FRAMES_DIR = str(settings.FRAMES_DIR)
 
 # Redis configuration
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

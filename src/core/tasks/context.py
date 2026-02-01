@@ -13,6 +13,7 @@ class TaskContext:
     """Context object that flows through the pipeline stages."""
 
     job_id: int
+    user_id: int  # User ID for storage path building
     source_id: str
     input_type: str  # 'url', 'upload', 'panopto'
     input_data: dict  # Serialized input configuration
@@ -48,7 +49,11 @@ class TaskContext:
                 setattr(self, field, other_value)
 
     def get_video_path(self) -> str:
-        """Get the path to the video file."""
-        if self.video_path and os.path.exists(self.video_path):
+        """Get the path to the video file.
+
+        Returns the stored video_path if set, otherwise constructs a default path.
+        For S3 storage, this may return an S3 key that needs to be downloaded first.
+        """
+        if self.video_path:
             return self.video_path
         return os.path.join(IN_DIR, f"video_{self.source_id}.mp4")

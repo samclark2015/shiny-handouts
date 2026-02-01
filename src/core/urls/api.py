@@ -20,13 +20,13 @@ urlpatterns = [
     # File browser
     path("files", api.get_files, name="get_files"),
     path(
-        "lectures/<int:lecture_id>/artifacts",
-        api.get_lecture_artifacts,
-        name="get_lecture_artifacts",
+        "jobs/<int:job_id>/artifacts",
+        api.get_job_artifacts,
+        name="get_job_artifacts",
     ),
     path(
-        "lectures/<int:lecture_id>/rename",
-        api.rename_lecture,
-        name="rename_lecture",
+        "jobs/<int:job_id>/rename",
+        api.rename_job,
+        name="rename_job",
     ),
 ]

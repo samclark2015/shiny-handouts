@@ -1,28 +1,28 @@
-{# File browser partial with nested Date -> Lecture -> Artifacts hierarchy #}
+{# File browser partial with nested Date -> Job -> Artifacts hierarchy #}
 {% if oob %}<div id="file-browser" hx-swap-oob="innerHTML">{% endif %}
-    {% if lectures_by_date %}
+    {% if jobs_by_date %}
     <div class="space-y-2">
-        {% for date_key, lectures in lectures_by_date.items %}
+        {% for date_key, jobs in jobs_by_date.items %}
         <details class="border rounded-md">
             <summary class="px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded-t-md font-medium text-gray-700">
                 📅 {{ date_key }}
-                <span class="text-sm text-gray-500 ml-2">({{ lectures|length }} lecture{{ lectures|pluralize }})</span>
+                <span class="text-sm text-gray-500 ml-2">({{ jobs|length }} job{{ jobs|pluralize }})</span>
             </summary>
 
             <div class="pl-6 py-2 space-y-2">
-                {% for lecture in lectures %}
+                {% for job in jobs %}
                 <details class="border-l-2 border-gray-200 pl-4">
                     <summary class="py-1 hover:text-blue-600 cursor-pointer font-medium group">
                         📚 
-                        <span id="lecture-title-{{ lecture.id }}">
-                            {% include "partials/lecture_title.html" with lecture=lecture %}
+                        <span id="job-title-{{ job.id }}">
+                            {% include "partials/job_title.html" with job=job %}
                         </span>
-                        <span class="text-sm text-gray-500 ml-2">({{ lecture.artifacts.count }} file{{ lecture.artifacts.count|pluralize }})</span>
+                        <span class="text-sm text-gray-500 ml-2">({{ job.artifacts.count }} file{{ job.artifacts.count|pluralize }})</span>
                     </summary>
 
                     <div class="pl-4 py-2 space-y-1">
-                        {% regroup lecture.artifacts.all by artifact_type as artifacts_by_type %}
-                        {% for artifact in lecture.artifacts.all %}
+                        {% regroup job.artifacts.all by artifact_type as artifacts_by_type %}
+                        {% for artifact in job.artifacts.all %}
                         {% if artifact.artifact_type != 'mermaid_mindmap' %}
                         <div class="flex items-center space-x-2 text-sm">
                             <a href="{% url 'main:serve_file' artifact.file_name %}" target="_blank"
