@@ -12,6 +12,7 @@ from django.conf import settings
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
+from core.storage import is_s3_enabled, temp_download, upload_file
 from core.tasks.config import OUT_DIR, broker
 from core.tasks.context import TaskContext
 from core.tasks.db import create_artifact
@@ -51,8 +52,12 @@ async def generate_output_task(data: dict) -> dict:
         if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
             raise ValueError("Error generating PDF")
 
+    # Upload to storage (S3 or keep local)
+    storage_path = await upload_file(local_path, "output", f"{title}.pdf")
+
     ctx.outputs = ctx.outputs or {}
-    ctx.outputs["pdf_local_path"] = local_path
+    ctx.outputs["pdf_path"] = storage_path
+    ctx.outputs["pdf_local_path"] = local_path  # Keep for compression step
     ctx.outputs["pdf_filename"] = f"{title}.pdf"
     ctx.outputs["source_id"] = ctx.source_id
 
@@ -63,7 +68,7 @@ async def generate_output_task(data: dict) -> dict:
 
 @broker.task
 async def compress_pdf_task(data: dict) -> dict:
-    """Compress the PDF using Ghostscript, then upload and create artifact."""
+    """Compress the PDF using Ghostscript."""
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
     stage_name = "compress_pdf"
@@ -73,31 +78,34 @@ async def compress_pdf_task(data: dict) -> dict:
     if not ctx.outputs:
         return ctx.to_dict()
 
+    # Use local path for compression if available, otherwise download from S3
     pdf_local_path = ctx.outputs.get("pdf_local_path")
+    pdf_path = ctx.outputs.get("pdf_path")
     pdf_filename = ctx.outputs.get("pdf_filename", "output.pdf")
-    source_id = ctx.outputs.get("source_id", "")
 
-    if not pdf_local_path or not os.path.exists(pdf_local_path):
+    if not pdf_path:
         return ctx.to_dict()
 
-    # Compress the PDF locally
-    await _compress_pdf(pdf_local_path)
+    source_id = ctx.outputs.get("source_id", "")
 
-    await update_job_progress(job_id, stage_name, 0.7, "Uploading PDF")
+    # If we need to work with S3, download the file first
+    if is_s3_enabled() and not pdf_local_path:
+        async with temp_download(pdf_path) as temp_pdf:
+            compressed_path = await _compress_pdf(temp_pdf)
+            if compressed_path:
+                # Re-upload the compressed version
+                storage_path = await upload_file(compressed_path, "output", pdf_filename)
+                ctx.outputs["pdf_path"] = storage_path
+    else:
+        # Local storage - compress in place
+        work_path = pdf_local_path or pdf_path
+        if work_path and os.path.exists(work_path):
+            await _compress_pdf(work_path)
 
-    # Upload and create artifact
+    # Create artifact
     from core.models import ArtifactType
 
-    storage_path = await create_artifact(
-        job_id,
-        ArtifactType.PDF_HANDOUT,
-        pdf_filename,
-        local_path=pdf_local_path,
-        content_type="application/pdf",
-        source_id=source_id,
-    )
-
-    ctx.outputs["pdf_path"] = storage_path
+    await create_artifact(job_id, ArtifactType.PDF_HANDOUT, pdf_path, source_id)
 
     await update_job_progress(job_id, stage_name, 1.0, "PDF compressed")
 

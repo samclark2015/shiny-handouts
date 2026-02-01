@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 
 from asgiref.sync import sync_to_async
 
-from core.storage import upload_bytes, upload_file
+from core.storage import get_file_size, is_s3_enabled
 
 
 @sync_to_async
@@ -68,61 +68,40 @@ def get_or_create_lecture(job_id: int, source_id: str | None = None):
 
 
 async def create_artifact(
-    job_id: int,
-    artifact_type,
-    filename: str,
-    content: str | bytes | None = None,
-    local_path: str | None = None,
-    content_type: str | None = None,
-    source_id: str | None = None,
-) -> str:
-    """Upload content to storage and create an artifact record.
-
-    This function handles both uploading content to storage and creating the
-    corresponding database record.
+    job_id: int, artifact_type, file_path: str, source_id: str | None = None
+) -> None:
+    """Create an artifact record immediately when a file is generated.
 
     Args:
         job_id: The job ID
-        artifact_type: Type of artifact (PDF_HANDOUT, EXCEL_STUDY_TABLE, etc.)
-        filename: The output filename
-        content: String or bytes content to upload (mutually exclusive with local_path)
-        local_path: Path to a local file to upload (mutually exclusive with content)
-        content_type: Optional MIME type for the content
+        artifact_type: Type of artifact (PDF_HANDOUT, EXCEL_STUDY_TABLE, PDF_VIGNETTE)
+        file_path: Path to the generated file (local path or S3 key)
         source_id: Optional source ID for lecture lookup
-
-    Returns:
-        The storage path (S3 key or local path)
-
-    Raises:
-        ValueError: If neither content nor local_path is provided
     """
-    if content is None and local_path is None:
-        raise ValueError("Either content or local_path must be provided")
+    from core.models import Artifact
 
-    # Upload to storage
-    if local_path is not None:
-        storage_path = await upload_file(local_path, "output", filename)
-        file_size = os.path.getsize(local_path)
-    elif isinstance(content, str):
-        content_bytes = content.encode("utf-8")
-        storage_path = await upload_bytes(
-            content_bytes, "output", filename, content_type=content_type
-        )
-        file_size = len(content_bytes)
-    elif isinstance(content, bytes):
-        storage_path = await upload_bytes(content, "output", filename, content_type=content_type)
-        file_size = len(content)
-    else:
-        raise ValueError("content must be str or bytes")
+    if not file_path:
+        return
+
+    # For S3, file_path is the S3 key; for local, check if file exists
+    if not is_s3_enabled() and not os.path.exists(file_path):
+        return
 
     try:
+        # Get file size (works for both local and S3)
+        try:
+            file_size = await get_file_size(file_path)
+        except Exception:
+            file_size = 0
+
+        # Get the filename from the path
+        file_name = os.path.basename(file_path)
+
         await _create_artifact_sync(
-            job_id, artifact_type, storage_path, filename, file_size, source_id
+            job_id, artifact_type, file_path, file_name, file_size, source_id
         )
     except Exception as e:
         logging.exception(f"Failed to create artifact for job {job_id}: {e}")
-
-    return storage_path
 
 
 @sync_to_async
