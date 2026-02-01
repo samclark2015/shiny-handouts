@@ -15,8 +15,8 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
-from core.storage import is_s3_enabled, temp_download, upload_bytes, upload_file
-from core.tasks.config import OUT_DIR, broker
+from core.storage import temp_download
+from core.tasks.config import broker
 from core.tasks.context import TaskContext
 from core.tasks.db import create_artifact
 from core.tasks.progress import update_job_progress
@@ -143,24 +143,23 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
 
-        # Save to temp file first, then upload
-        with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        # Save to temp file
+        with NamedTemporaryFile(suffix=".xlsx") as tmp:
             tmp_path = tmp.name
 
-        await asyncio.to_thread(wb.save, tmp_path)
+            await asyncio.to_thread(wb.save, tmp_path)
 
-        # Upload to storage
-        storage_path = await upload_file(tmp_path, "output", output_filename)
+            # Upload and create artifact
+            from core.models import ArtifactType
 
-        # Clean up temp file
-        os.unlink(tmp_path)
-
-        # Create artifact
-        from core.models import ArtifactType
-
-        await create_artifact(
-            job_id, ArtifactType.EXCEL_STUDY_TABLE, storage_path, ctx.source_id
-        )
+            storage_path = await create_artifact(
+                job_id,
+                ArtifactType.EXCEL_STUDY_TABLE,
+                output_filename,
+                local_path=tmp_path,
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                source_id=ctx.source_id,
+            )
 
         return {"xlsx_path": storage_path}
     except Exception as e:
@@ -206,30 +205,29 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
         html = template.render(learning_objectives=learning_objectives)
 
         # Get base name from the PDF filename
-        pdf_filename = ctx.outputs.get("pdf_filename", os.path.basename(pdf_path))
-        base_name = os.path.splitext(pdf_filename)[0]
-        output_filename = f"{base_name} - Vignette Questions.pdf"
+        output_filename = "Vignette Questions.pdf"
 
         # Create PDF in temp file
-        with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        with NamedTemporaryFile(suffix=".pdf") as tmp:
             tmp_path = tmp.name
 
-        with open(tmp_path, "wb") as f:
-            pisa_status = pisa.CreatePDF(html, dest=f)
-            if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
-                os.unlink(tmp_path)
-                return {}
+            with open(tmp_path, "wb") as f:
+                pisa_status = pisa.CreatePDF(html, dest=f)
+                if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+                    os.unlink(tmp_path)
+                    return {}
 
-        # Upload to storage
-        storage_path = await upload_file(tmp_path, "output", output_filename)
+            # Upload and create artifact
+            from core.models import ArtifactType
 
-        # Clean up temp file
-        os.unlink(tmp_path)
-
-        # Create artifact
-        from core.models import ArtifactType
-
-        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, storage_path, ctx.source_id)
+            storage_path = await create_artifact(
+                job_id,
+                ArtifactType.PDF_VIGNETTE,
+                output_filename,
+                local_path=tmp_path,
+                content_type="application/pdf",
+                source_id=ctx.source_id,
+            )
 
         return {"vignette_path": storage_path}
     except Exception as e:
@@ -272,7 +270,6 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
         base_name = os.path.splitext(pdf_filename)[0]
         mindmap_paths = []
 
-        # Create artifact import
         from core.models import ArtifactType
 
         for i, (title, mermaid_code) in enumerate(mindmaps):
@@ -283,16 +280,15 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
 
             mindmap_filename = f"{base_name} - {safe_title}.mmd"
 
-            # Upload mermaid code as text
-            storage_path = await upload_bytes(
-                mermaid_code.encode("utf-8"),
-                "output",
+            # Upload and create artifact
+            storage_path = await create_artifact(
+                job_id,
+                ArtifactType.MERMAID_MINDMAP,
                 mindmap_filename,
+                content=mermaid_code,
                 content_type="text/plain",
+                source_id=ctx.source_id,
             )
-
-            # Create artifact for each mindmap
-            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, storage_path, ctx.source_id)
             mindmap_paths.append(storage_path)
 
         return {"mindmap_paths": mindmap_paths}
