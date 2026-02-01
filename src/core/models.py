@@ -4,8 +4,6 @@ Database models for Handout Generator core functionality.
 Provides Job and Artifact models for pipeline processing.
 """
 
-import os
-from typing import Optional
 
 from django.conf import settings
 from django.db import models

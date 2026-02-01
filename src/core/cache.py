@@ -15,13 +15,13 @@ import redis
 REDIS_CACHE_URL = os.environ.get("REDIS_CACHE_URL", "redis://localhost:6379/1")
 
 # Global Redis client instance
-_redis_client: redis.Redis | None = None
+_redis_client: redis.Redis[bytes] | None = None
 
 # Cache expiration time (7 days)
 CACHE_EXPIRY = 60 * 60 * 24 * 7
 
 
-def get_redis_client() -> redis.Redis:
+def get_redis_client() -> redis.Redis[bytes]:
     """Get or create the Redis client instance."""
     global _redis_client
     if _redis_client is None:

@@ -123,7 +123,7 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
                 else:
                     rich_text = parse_markdown_bold_to_rich_text(str(cell_value))
                     cell = ws.cell(row=row_num, column=col_num)
-                    cell.value = rich_text
+                    cell.value = rich_text  # type: ignore
                     cell.fill = PatternFill(
                         start_color=CELL_BG_COLOR, end_color=CELL_BG_COLOR, fill_type="solid"
                     )

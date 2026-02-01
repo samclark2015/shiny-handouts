@@ -115,6 +115,7 @@ async def gen_keypoints(content: str, slide_path: str) -> str:
                     {"type": "input_text", "text": content},
                     {
                         "type": "input_image",
+                        "detail": "auto",
                         "image_url": f"data:image/jpeg;base64,{image_data}",
                     },
                 ],

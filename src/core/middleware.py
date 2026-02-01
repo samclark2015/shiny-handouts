@@ -126,5 +126,3 @@ class PipelineErrorMiddleware(TaskiqMiddleware):
             await redis.close()
         except Exception as e:
             logger.error(f"Failed to publish failure for job {job_id}: {e}")
-        except Exception as e:
-            logger.error(f"Failed to publish failure for job {job_id}: {e}")

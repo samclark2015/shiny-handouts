@@ -166,7 +166,7 @@ class Command(BaseCommand):
         # Try to find exact title match first
         for job in jobs:
             title = job.title or job.label
-            if title == name or title == base_name:
+            if title in (name, base_name):
                 return job
 
         # Try prefix matching
