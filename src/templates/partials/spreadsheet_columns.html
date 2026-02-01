@@ -1,0 +1,140 @@
+{{ default_columns|json_script:"default-columns-data" }}
+{{ columns|json_script:"initial-columns-data" }}
+
+<div x-data="columnEditor()" x-init="init()">
+    <label class="block text-sm font-medium text-gray-700 mb-1">Spreadsheet Columns</label>
+    <p class="text-xs text-gray-500 mb-2">Edit column names and descriptions used for the Excel study table. Drag rows to reorder.</p>
+
+    <div class="border border-gray-200 rounded-md">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-2 py-2 w-8" aria-label="Drag"></th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Description</th>
+                    <th class="px-4 py-2" aria-label="Actions"></th>
+                </tr>
+            </thead>
+            <tbody id="columns-body" class="divide-y divide-gray-200">
+                <template x-for="(col, index) in columns" :key="index">
+                    <tr class="hover:bg-gray-50"
+                        :class="{ 'opacity-50 bg-gray-100': draggingIndex === index }">
+                        <td class="px-2 py-2 text-gray-400 cursor-move drag-handle"
+                            @mousedown="startDrag($event, index)">
+                            <i class="fas fa-grip-vertical"></i>
+                        </td>
+                        <td class="px-4 py-2">
+                            <input type="text" 
+                                   class="w-full px-2 py-1 border border-gray-300 rounded-md" 
+                                   x-model="col.name" 
+                                   placeholder="Column name">
+                        </td>
+                        <td class="px-4 py-2">
+                            <textarea class="w-full px-2 py-1 border border-gray-300 rounded-md" 
+                                      x-model="col.description"
+                                      placeholder="Description (optional)"></textarea>
+                        </td>
+                        <td class="px-4 py-2 text-right">
+                            <button type="button" 
+                                    class="text-red-600 hover:text-red-800" 
+                                    @click="columns.splice(index, 1)">Remove</button>
+                        </td>
+                    </tr>
+                </template>
+                <!-- Drop placeholder -->
+                <tr x-show="draggingIndex !== null && dropIndex !== null && dropIndex === columns.length"
+                    class="bg-blue-100 border-2 border-dashed border-blue-400">
+                    <td colspan="4" class="py-2">&nbsp;</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="px-4 py-2 bg-gray-50 flex justify-between">
+            <div class="space-x-2">
+                <button type="button" class="text-sm text-blue-600 hover:text-blue-800" @click="addColumn()">Add Column</button>
+                <button type="button" class="text-sm text-gray-600 hover:text-gray-800" @click="loadDefaults()">Reset to Default</button>
+            </div>
+        </div>
+    </div>
+
+    {{ form.spreadsheet_columns_json }}
+</div>
+
+<script>
+    function columnEditor() {
+        return {
+            columns: [],
+            draggingIndex: null,
+            dropIndex: null,
+            
+            init() {
+                // Load initial columns from server or defaults
+                const initial = JSON.parse(document.getElementById('initial-columns-data').textContent);
+                if (initial && initial.length > 0) {
+                    this.columns = initial;
+                } else {
+                    this.loadDefaults();
+                }
+                
+                // Set up form submission handler on closest form
+                const form = this.$el.closest('form');
+                if (form) {
+                    form.addEventListener('submit', () => this.onSubmit());
+                }
+            },
+            
+            loadDefaults() {
+                const defaults = JSON.parse(document.getElementById('default-columns-data').textContent);
+                this.columns = defaults.map(col => ({ name: col.name, description: col.description }));
+            },
+            
+            addColumn() {
+                this.columns.push({ name: '', description: '' });
+            },
+            
+            startDrag(event, index) {
+                event.preventDefault();
+                this.draggingIndex = index;
+                
+                const onMouseMove = (e) => {
+                    const tbody = document.getElementById('columns-body');
+                    const rows = tbody.querySelectorAll('tr:not([x-show])');
+                    
+                    let newDropIndex = this.columns.length;
+                    for (let i = 0; i < rows.length; i++) {
+                        const rect = rows[i].getBoundingClientRect();
+                        const midY = rect.top + rect.height / 2;
+                        if (e.clientY < midY) {
+                            newDropIndex = i;
+                            break;
+                        }
+                    }
+                    this.dropIndex = newDropIndex;
+                };
+                
+                const onMouseUp = () => {
+                    if (this.draggingIndex !== null && this.dropIndex !== null && this.draggingIndex !== this.dropIndex) {
+                        const item = this.columns.splice(this.draggingIndex, 1)[0];
+                        const insertAt = this.dropIndex > this.draggingIndex ? this.dropIndex - 1 : this.dropIndex;
+                        this.columns.splice(insertAt, 0, item);
+                    }
+                    
+                    this.draggingIndex = null;
+                    this.dropIndex = null;
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                };
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            },
+            
+            onSubmit() {
+                const validColumns = this.columns.filter(col => col.name.trim());
+                const hiddenInput = document.querySelector('input[name="spreadsheet_columns_json"]');
+                if (hiddenInput) {
+                    hiddenInput.value = JSON.stringify(validColumns);
+                }
+            }
+        };
+    }
+</script>
