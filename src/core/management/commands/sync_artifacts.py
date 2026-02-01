@@ -55,16 +55,14 @@ class Command(BaseCommand):
         if lecture_id:
             lectures = lectures.filter(id=lecture_id)
 
-        if not lectures.exists():
-            self.stdout.write(self.style.WARNING("No lectures found in database"))
-            return
-
         created_count = 0
         updated_count = 0
         skipped_count = 0
 
         # Scan output directory for files
         for file_path in output_dir.iterdir():
+            self.stdout.write(f"Processing file: {file_path.name}")
+
             if not file_path.is_file():
                 continue
 
