@@ -245,3 +245,18 @@ Key variables (see `.env.example`):
 - `REDIS_URL` - Redis broker URL
 - `OPENAI_API_KEY` - Required for AI features
 - `DEBUG` - Enable debug mode (default: true)
+
+### S3 Storage (Optional)
+
+Set `USE_S3_STORAGE=true` to enable S3 storage for all generated files:
+- `S3_BUCKET_NAME` - S3 bucket name
+- `S3_REGION` - AWS region (default: us-east-1)
+- `S3_ENDPOINT_URL` - Optional, for S3-compatible services (MinIO, DigitalOcean Spaces)
+- `S3_ACCESS_KEY_ID` / `AWS_ACCESS_KEY_ID` - Access key
+- `S3_SECRET_ACCESS_KEY` / `AWS_SECRET_ACCESS_KEY` - Secret key
+
+When S3 is enabled:
+- Uploaded videos are stored in `input/` prefix
+- Generated artifacts (PDF, Excel, etc.) are stored in `output/` prefix
+- Extracted frames are stored in `frames/<source_id>/` prefix
+- Downloads use presigned URLs for direct S3 access

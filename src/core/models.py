@@ -185,5 +185,15 @@ class Artifact(models.Model):
         return f"{self.file_name} ({self.get_artifact_type_display()})"
 
     def get_download_path(self) -> str:
-        """Get the relative path for downloading this artifact."""
-        return os.path.basename(self.file_path)
+        """Get the relative path for downloading this artifact.
+
+        For local storage, returns the filename.
+        For S3, returns the S3 key stored in file_path.
+        """
+        return self.file_path if self.file_path else self.file_name
+
+    def get_download_url(self) -> str:
+        """Get the URL for downloading this artifact."""
+        from django.urls import reverse
+
+        return reverse("serve_file", kwargs={"filename": self.file_name})

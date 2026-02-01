@@ -5,6 +5,7 @@ Artifact generation stage tasks (spreadsheet, vignette, mindmap).
 import asyncio
 import logging
 import os
+from tempfile import NamedTemporaryFile
 
 import pandas as pd
 from django.conf import settings
@@ -14,6 +15,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from xhtml2pdf import pisa
 
+from core.storage import is_s3_enabled, temp_download, upload_bytes, upload_file
 from core.tasks.config import OUT_DIR, broker
 from core.tasks.context import TaskContext
 from core.tasks.db import create_artifact
@@ -38,23 +40,27 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
         return {}
 
     pdf_path = ctx.outputs.get("pdf_path")
-    if not pdf_path or not os.path.exists(pdf_path):
+    if not pdf_path:
         return {}
 
     try:
-        study_table = await generate_spreadsheet_helper(
-            pdf_path,
-            custom_prompt=ctx.spreadsheet_prompt,
-            custom_columns=ctx.spreadsheet_columns,
-        )
+        # Download PDF if on S3 for AI processing
+        async with temp_download(pdf_path) as local_pdf:
+            study_table = await generate_spreadsheet_helper(
+                local_pdf,
+                custom_prompt=ctx.spreadsheet_prompt,
+                custom_columns=ctx.spreadsheet_columns,
+            )
 
         if not study_table.rows:
             return {}
 
         df = pd.DataFrame(study_table.rows)
 
-        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        output_filename = os.path.join(OUT_DIR, f"{base_name}.xlsx")
+        # Get base name from the PDF filename
+        pdf_filename = ctx.outputs.get("pdf_filename", os.path.basename(pdf_path))
+        base_name = os.path.splitext(pdf_filename)[0]
+        output_filename = f"{base_name}.xlsx"
 
         # Style constants
         HEADER_BG_COLOR = "D3D3D3"
@@ -137,16 +143,26 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
             adjusted_width = min(max_length + 2, 50)
             ws.column_dimensions[column_letter].width = adjusted_width
 
-        await asyncio.to_thread(wb.save, output_filename)
+        # Save to temp file first, then upload
+        with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        await asyncio.to_thread(wb.save, tmp_path)
+
+        # Upload to storage
+        storage_path = await upload_file(tmp_path, "output", output_filename)
+
+        # Clean up temp file
+        os.unlink(tmp_path)
 
         # Create artifact
         from core.models import ArtifactType
 
         await create_artifact(
-            job_id, ArtifactType.EXCEL_STUDY_TABLE, output_filename, ctx.source_id
+            job_id, ArtifactType.EXCEL_STUDY_TABLE, storage_path, ctx.source_id
         )
 
-        return {"xlsx_path": output_filename}
+        return {"xlsx_path": storage_path}
     except Exception as e:
         logging.exception(f"Failed to generate spreadsheet: {e}")
         return {}
@@ -168,14 +184,16 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
         return {}
 
     pdf_path = ctx.outputs.get("pdf_path")
-    if not pdf_path or not os.path.exists(pdf_path):
+    if not pdf_path:
         return {}
 
     try:
-        vignette_data = await generate_vignette_questions(
-            pdf_path,
-            custom_prompt=ctx.vignette_prompt,
-        )
+        # Download PDF if on S3 for AI processing
+        async with temp_download(pdf_path) as local_pdf:
+            vignette_data = await generate_vignette_questions(
+                local_pdf,
+                custom_prompt=ctx.vignette_prompt,
+            )
 
         if not vignette_data.learning_objectives:
             return {}
@@ -187,20 +205,33 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
         template = env.get_template("vignette.html")
         html = template.render(learning_objectives=learning_objectives)
 
-        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
-        vignette_pdf_path = os.path.join(OUT_DIR, f"{base_name} - Vignette Questions.pdf")
+        # Get base name from the PDF filename
+        pdf_filename = ctx.outputs.get("pdf_filename", os.path.basename(pdf_path))
+        base_name = os.path.splitext(pdf_filename)[0]
+        output_filename = f"{base_name} - Vignette Questions.pdf"
 
-        with open(vignette_pdf_path, "wb") as f:
+        # Create PDF in temp file
+        with NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        with open(tmp_path, "wb") as f:
             pisa_status = pisa.CreatePDF(html, dest=f)
             if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+                os.unlink(tmp_path)
                 return {}
+
+        # Upload to storage
+        storage_path = await upload_file(tmp_path, "output", output_filename)
+
+        # Clean up temp file
+        os.unlink(tmp_path)
 
         # Create artifact
         from core.models import ArtifactType
 
-        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, vignette_pdf_path, ctx.source_id)
+        await create_artifact(job_id, ArtifactType.PDF_VIGNETTE, storage_path, ctx.source_id)
 
-        return {"vignette_path": vignette_pdf_path}
+        return {"vignette_path": storage_path}
     except Exception as e:
         logging.exception(f"Failed to generate vignette: {e}")
         return {}
@@ -222,19 +253,23 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
         return {}
 
     pdf_path = ctx.outputs.get("pdf_path")
-    if not pdf_path or not os.path.exists(pdf_path):
+    if not pdf_path:
         return {}
 
     try:
-        mindmaps = await generate_mindmap(
-            pdf_path,
-            custom_prompt=ctx.mindmap_prompt,
-        )
+        # Download PDF if on S3 for AI processing
+        async with temp_download(pdf_path) as local_pdf:
+            mindmaps = await generate_mindmap(
+                local_pdf,
+                custom_prompt=ctx.mindmap_prompt,
+            )
 
         if not mindmaps:
             return {}
 
-        base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+        # Get base name from the PDF filename
+        pdf_filename = ctx.outputs.get("pdf_filename", os.path.basename(pdf_path))
+        base_name = os.path.splitext(pdf_filename)[0]
         mindmap_paths = []
 
         # Create artifact import
@@ -246,19 +281,19 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
             if not safe_title:
                 safe_title = f"Mindmap {i + 1}"
 
-            # If only one mindmap, use simpler naming
-            if len(mindmaps) == 1:
-                mindmap_path = os.path.join(OUT_DIR, f"{base_name} - {safe_title}.mmd")
-            else:
-                mindmap_path = os.path.join(OUT_DIR, f"{base_name} - {safe_title}.mmd")
+            mindmap_filename = f"{base_name} - {safe_title}.mmd"
 
-            # Save mermaid code as text file
-            with open(mindmap_path, "w", encoding="utf-8") as f:
-                f.write(mermaid_code)
+            # Upload mermaid code as text
+            storage_path = await upload_bytes(
+                mermaid_code.encode("utf-8"),
+                "output",
+                mindmap_filename,
+                content_type="text/plain",
+            )
 
             # Create artifact for each mindmap
-            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, mindmap_path, ctx.source_id)
-            mindmap_paths.append(mindmap_path)
+            await create_artifact(job_id, ArtifactType.MERMAID_MINDMAP, storage_path, ctx.source_id)
+            mindmap_paths.append(storage_path)
 
         return {"mindmap_paths": mindmap_paths}
     except Exception as e:

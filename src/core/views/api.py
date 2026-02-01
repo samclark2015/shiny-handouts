@@ -31,6 +31,8 @@ REPO = os.getenv("REPO", "")
 @login_required
 def upload_file(request):
     """Handle file upload and start processing."""
+    from core.storage import is_s3_enabled, sync_upload_file
+
     if "file" not in request.FILES:
         return render(request, "partials/error.html", {"message": "No file provided"}, status=400)
 
@@ -43,15 +45,21 @@ def upload_file(request):
     enable_vignette = request.POST.get("enable_vignette", "on") == "on"
     profile_id = request.POST.get("profile_id", "").strip()
 
-    # Save the file
+    # Save the file locally first
     filename = get_valid_filename(file.name)
-    file_path = os.path.join(settings.INPUT_DIR, filename)
+    local_path = os.path.join(settings.INPUT_DIR, filename)
 
     os.makedirs(settings.INPUT_DIR, exist_ok=True)
 
-    with open(file_path, "wb+") as destination:
+    with open(local_path, "wb+") as destination:
         for chunk in file.chunks():
             destination.write(chunk)
+
+    # Upload to S3 if enabled, otherwise use local path
+    if is_s3_enabled():
+        storage_path = sync_upload_file(local_path, "input", filename)
+    else:
+        storage_path = local_path
 
     # Get setting profile if specified
     from accounts.models import SettingProfile
@@ -69,7 +77,7 @@ def upload_file(request):
         label=filename,
         status=JobStatus.PENDING,
         input_type="upload",
-        input_data=json.dumps({"path": file_path, "filename": filename}),
+        input_data=json.dumps({"path": storage_path, "filename": filename}),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
         setting_profile=setting_profile,

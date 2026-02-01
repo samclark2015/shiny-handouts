@@ -3,11 +3,13 @@ Frame matching and AI transformation stage tasks.
 """
 
 import os
+from tempfile import TemporaryDirectory
 from typing import cast
 from uuid import uuid4
 
 import cv2
 
+from core.storage import is_s3_enabled, temp_download, upload_file
 from core.tasks.config import FRAME_SCALE_FACTOR, FRAME_SIMILARITY_THRESHOLD, FRAMES_DIR, broker
 from core.tasks.context import TaskContext
 from core.tasks.frames import compare_frames_edges, preprocess_frame_for_comparison
@@ -37,54 +39,119 @@ async def match_frames_task(data: dict) -> dict:
     cum_captions = []
     pairs = []
 
-    stream = cv2.VideoCapture()
-    stream.open(ctx.get_video_path())
+    # Get video path - may need to download from S3
+    video_path = ctx.get_video_path()
 
-    frame_path = os.path.join(FRAMES_DIR, ctx.source_id)
-    os.makedirs(frame_path, exist_ok=True)
+    # For S3, download video to temp location for OpenCV processing
+    if is_s3_enabled():
+        async with temp_download(video_path) as local_video:
+            pairs = await _process_video_frames(
+                local_video, captions, ctx.source_id, job_id, stage_name
+            )
+    else:
+        pairs = await _process_video_frames(
+            video_path, captions, ctx.source_id, job_id, stage_name
+        )
 
-    for idx, cap in enumerate(captions):
-        # Set video position to caption timestamp + 1.5s offset
-        stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
-        ret, frame = stream.read()
-        if not ret:
-            continue
-
-        # Downscale and convert to grayscale for comparison
-        frame_gs = preprocess_frame_for_comparison(frame, FRAME_SCALE_FACTOR)
-
-        if last_frame is None:
-            last_frame = frame
-            last_frame_gs = frame_gs
-            cum_captions.append(cap.text)
-            continue
-
-        # Edge-based comparison (works well for lecture slides)
-        score = compare_frames_edges(last_frame_gs, frame_gs)
-
-        # Threshold for edge correlation (0.92 = significant structural change)
-        if score < FRAME_SIMILARITY_THRESHOLD or (idx + 1) == len(captions):
-            cap_full = " ".join(cum_captions)
-            # Option 4: Use JPEG format for faster I/O
-            image_path = os.path.join(frame_path, f"{uuid4()}.jpg")
-            cv2.imwrite(image_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-
-            pairs.append({"image": image_path, "caption": cap_full, "extra": None})
-            last_frame = frame
-            last_frame_gs = frame_gs
-            cum_captions.clear()
-
-            progress = (idx + 1) / len(captions)
-            await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
-
-        cum_captions.append(cap.text)
-
-    stream.release()
     ctx.slides = pairs
 
     await update_job_progress(job_id, stage_name, 1.0, "Frames matched")
 
     return ctx.to_dict()
+
+
+async def _process_video_frames(
+    video_path: str,
+    captions: list[Caption],
+    source_id: str,
+    job_id: int,
+    stage_name: str,
+) -> list[dict]:
+    """Process video frames and match with captions.
+
+    Args:
+        video_path: Local path to video file
+        captions: List of captions to match
+        source_id: Source ID for organizing frames
+        job_id: Job ID for progress updates
+        stage_name: Stage name for progress updates
+
+    Returns:
+        List of slide dictionaries with image paths and captions
+    """
+    last_frame = None
+    last_frame_gs = None
+    cum_captions = []
+    pairs = []
+
+    stream = cv2.VideoCapture()
+    stream.open(video_path)
+
+    # Create temp directory for frames if using S3, otherwise use frames dir
+    if is_s3_enabled():
+        temp_dir = TemporaryDirectory()
+        frame_path = temp_dir.name
+    else:
+        frame_path = os.path.join(FRAMES_DIR, source_id)
+        os.makedirs(frame_path, exist_ok=True)
+        temp_dir = None
+
+    try:
+        for idx, cap in enumerate(captions):
+            # Set video position to caption timestamp + 1.5s offset
+            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
+            ret, frame = stream.read()
+            if not ret:
+                continue
+
+            # Downscale and convert to grayscale for comparison
+            frame_gs = preprocess_frame_for_comparison(frame, FRAME_SCALE_FACTOR)
+
+            if last_frame is None:
+                last_frame = frame
+                last_frame_gs = frame_gs
+                cum_captions.append(cap.text)
+                continue
+
+            # Edge-based comparison (works well for lecture slides)
+            score = compare_frames_edges(last_frame_gs, frame_gs)
+
+            # Threshold for edge correlation (0.92 = significant structural change)
+            if score < FRAME_SIMILARITY_THRESHOLD or (idx + 1) == len(captions):
+                cap_full = " ".join(cum_captions)
+
+                # Save frame locally first
+                frame_filename = f"{uuid4()}.jpg"
+                local_frame_path = os.path.join(frame_path, frame_filename)
+                cv2.imwrite(local_frame_path, last_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+
+                # Upload to S3 if enabled
+                if is_s3_enabled():
+                    image_path = await upload_file(
+                        local_frame_path,
+                        "frames",
+                        frame_filename,
+                        source_id=source_id,
+                    )
+                else:
+                    image_path = local_frame_path
+
+                pairs.append({"image": image_path, "caption": cap_full, "extra": None})
+                last_frame = frame
+                last_frame_gs = frame_gs
+                cum_captions.clear()
+
+                progress = (idx + 1) / len(captions)
+                await update_job_progress(job_id, stage_name, progress * 0.9, "Matching slides")
+
+            cum_captions.append(cap.text)
+
+    finally:
+        stream.release()
+        if temp_dir:
+            temp_dir.cleanup()
+
+    return pairs
 
 
 @broker.task
