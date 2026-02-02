@@ -24,9 +24,7 @@ def index(request):
     )
 
     # Get user's completed jobs grouped by date (paginated to last 100 jobs)
-    completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
-        "-created_at"
-    )[:100]
+    completed_jobs = Job.objects.filter(status=JobStatus.COMPLETED).order_by("-created_at")[:100]
 
     # Group jobs by date
     jobs_by_date = {}
