@@ -8,14 +8,11 @@ const MindmapUtils = {
   /**
    * Initialize Mermaid with given options
    */
-  initMermaid(theme = 'default', padding = 40) {
+  initMermaid(theme = "default", padding = 40, nodeMaxWidth = 220) {
     mermaid.initialize({
       startOnLoad: false,
       theme: theme,
-      mindmap: { padding: parseInt(padding), useMaxWidth: false },
-      securityLevel: 'loose',
-      flowchart: { useMaxWidth: false },
-      logLevel: 'error'
+      flowchart: {useMaxWidth: false}
     });
   },
 
@@ -25,11 +22,11 @@ const MindmapUtils = {
   async renderDiagram(elementId, code, svgIdPrefix) {
     const element = document.getElementById(elementId);
     if (!element) {
-      console.error('Mermaid: Element not found:', elementId);
+      console.error("Mermaid: Element not found:", elementId);
       return false;
     }
     if (!code || !code.trim()) {
-      console.error('Mermaid: No code provided');
+      console.error("Mermaid: No code provided");
       return false;
     }
 
@@ -42,7 +39,7 @@ const MindmapUtils = {
       element.innerHTML = svg;
       return true;
     } catch (error) {
-      console.error('Mermaid rendering error:', error);
+      console.error("Mermaid rendering error:", error);
       // Show the code and error for debugging
       element.innerHTML = `<div style="color: red; padding: 1rem;">
         <strong>Diagram rendering failed:</strong> ${error.message || error}
@@ -56,7 +53,7 @@ const MindmapUtils = {
    * Escape HTML entities for safe display
    */
   _escapeHtml(text) {
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   },
@@ -67,13 +64,13 @@ const MindmapUtils = {
   downloadPNG(svgSelector, filename) {
     const svg = document.querySelector(svgSelector);
     if (!svg) {
-      alert('Diagram not rendered yet. Please wait.');
+      alert("Diagram not rendered yet. Please wait.");
       return;
     }
 
     const svgData = new XMLSerializer().serializeToString(svg);
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
     const img = new Image();
 
     img.onload = function () {
@@ -81,12 +78,12 @@ const MindmapUtils = {
       canvas.width = img.width * scale;
       canvas.height = img.height * scale;
       ctx.scale(scale, scale);
-      ctx.fillStyle = 'white';
+      ctx.fillStyle = "white";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(img, 0, 0);
 
-      const pngUrl = canvas.toDataURL('image/png');
-      const a = document.createElement('a');
+      const pngUrl = canvas.toDataURL("image/png");
+      const a = document.createElement("a");
       a.href = pngUrl;
       a.download = filename;
       document.body.appendChild(a);
@@ -94,7 +91,9 @@ const MindmapUtils = {
       document.body.removeChild(a);
     };
 
-    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+    img.src =
+      "data:image/svg+xml;base64," +
+      btoa(unescape(encodeURIComponent(svgData)));
   },
 
   /**
@@ -105,5 +104,5 @@ const MindmapUtils = {
     if (element) {
       element.style.transform = `scale(${zoomPercent / 100})`;
     }
-  }
+  },
 };

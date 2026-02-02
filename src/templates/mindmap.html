@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}{{ title }} - Mindmap{% endblock %}
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script src="{% static 'js/mindmap-utils.js' %}"></script>
 {% endblock %} {% block body %}
 <div class="mindmap-container" x-data="mindmapViewer()" x-init="init()">
