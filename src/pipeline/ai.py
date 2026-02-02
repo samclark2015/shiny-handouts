@@ -96,11 +96,12 @@ def ai_checkpoint(func):
         start_time = time.time()
 
         # Extract tracking context from kwargs
-        user_id = kwargs.get("user_id")
-        job_id = kwargs.get("job_id")
+        cache_kwargs = kwargs.copy()
+        user_id = cache_kwargs.pop("user_id")
+        job_id = cache_kwargs.pop("job_id")
 
         # Try to get cached result
-        cached = get_ai_cached_result(func_name, *args, **kwargs)
+        cached = get_ai_cached_result(func_name, *args, **cache_kwargs)
         if cached is not None:
             logging.info(f"[AI Checkpoint] Using cached result for {func_name}")
             # Track as cached request (no tokens used)
