@@ -19,20 +19,27 @@ This package is organized into the following modules:
 import redis.asyncio as aioredis
 from taskiq import TaskiqEvents
 
-from .config import (FRAME_SCALE_FACTOR, FRAME_SIMILARITY_THRESHOLD, REDIS_URL,
-                     broker)
+from .config import FRAME_SCALE_FACTOR, FRAME_SIMILARITY_THRESHOLD, REDIS_URL, broker
 from .context import TaskContext
 from .frames import compare_frames_edges, preprocess_frame_for_comparison
 from .pipeline import create_pipeline, start_pipeline
 from .progress import JobCancelledException, check_job_cancelled
+
 # Re-export all stage tasks for backwards compatibility
-from .stages import (compress_pdf_task, download_video_task,
-                     extract_captions_task, finalize_job_task,
-                     generate_artifacts_task, generate_context_task,
-                     generate_mindmap_artifact_task, generate_output_task,
-                     generate_spreadsheet_artifact_task,
-                     generate_vignette_artifact_task, match_frames_task,
-                     transform_slides_ai_task)
+from .stages import (
+    compress_pdf_task,
+    download_video_task,
+    extract_captions_task,
+    finalize_job_task,
+    generate_artifacts_task,
+    generate_context_task,
+    generate_mindmap_artifact_task,
+    generate_output_task,
+    generate_spreadsheet_artifact_task,
+    generate_vignette_artifact_task,
+    match_frames_task,
+    transform_slides_ai_task,
+)
 
 
 # Worker lifecycle events

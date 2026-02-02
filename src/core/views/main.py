@@ -3,7 +3,6 @@
 import os
 
 from asgiref.sync import async_to_sync
-from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
@@ -13,8 +12,6 @@ from core.storage import (
     download_bytes,
     generate_presigned_url,
     is_s3_enabled,
-    sync_download_file,
-    sync_file_exists,
 )
 
 
@@ -170,7 +167,7 @@ def _get_file_content(user, filename: str) -> str | None:
     if not os.path.exists(file_path):
         return None
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, encoding="utf-8") as f:
         return f.read()
 
 
@@ -231,6 +228,6 @@ def _get_artifact_content(artifact: Artifact) -> str | None:
     # Local storage - use artifact's file_path directly
     file_path = artifact.file_path
     if os.path.exists(file_path):
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             return f.read()
     return None

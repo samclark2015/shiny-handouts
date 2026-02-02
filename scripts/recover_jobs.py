@@ -14,7 +14,6 @@ Or with a specific user email:
 
 import argparse
 import os
-import re
 import sys
 from collections import defaultdict
 from pathlib import Path

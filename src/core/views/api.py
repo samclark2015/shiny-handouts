@@ -1,6 +1,7 @@
 """API views for HTMX interactions."""
 
 import base64
+import contextlib
 import json
 import os
 import time
@@ -14,7 +15,7 @@ from asgiref.sync import async_to_sync
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import models
-from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -66,10 +67,8 @@ def upload_file(request):
 
     setting_profile = None
     if profile_id:
-        try:
+        with contextlib.suppress(ValueError, SettingProfile.DoesNotExist):
             setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
-        except (ValueError, SettingProfile.DoesNotExist):
-            pass
 
     # Create job record
     job = Job.objects.create(
@@ -115,10 +114,8 @@ def process_url(request):
 
     setting_profile = None
     if profile_id:
-        try:
+        with contextlib.suppress(ValueError, SettingProfile.DoesNotExist):
             setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
-        except (ValueError, SettingProfile.DoesNotExist):
-            pass
 
     # Create job record
     job = Job.objects.create(
@@ -175,10 +172,8 @@ def process_panopto(request):
 
     setting_profile = None
     if profile_id:
-        try:
+        with contextlib.suppress(ValueError, SettingProfile.DoesNotExist):
             setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
-        except (ValueError, SettingProfile.DoesNotExist):
-            pass
 
     # Create job record
     job = Job.objects.create(
@@ -341,7 +336,7 @@ def job_progress(request, job_id: int):
     """SSE endpoint for real-time job progress updates via Redis pub/sub."""
     job = get_object_or_404(Job, id=job_id, user=request.user)
 
-    def event_stream() -> Generator[str, None, None]:
+    def event_stream() -> Generator[str]:
         """Generate SSE events from Redis pub/sub."""
         import redis
 

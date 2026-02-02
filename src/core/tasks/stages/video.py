@@ -4,13 +4,7 @@ Video download and caption extraction stage tasks.
 
 import os
 
-from core.storage import (
-    file_exists,
-    get_source_local_path,
-    get_source_path,
-    is_s3_enabled,
-    upload_file,
-)
+from core.storage import file_exists, get_source_local_path, get_source_path, is_s3_enabled
 from core.tasks.config import broker
 from core.tasks.context import TaskContext
 from core.tasks.db import update_job_source_info
@@ -38,9 +32,8 @@ async def download_video_task(data: dict) -> dict:
     # For uploads, handle the path from input_data
     if ctx.input_type == "upload":
         upload_path = ctx.input_data.get("path", "")
-        if upload_path:
-            # Check if file exists (local or S3)
-            if await file_exists(upload_path):
+        # Check if file exists (local or S3)
+        if upload_path and await file_exists(upload_path):
                 ctx.video_path = upload_path
                 await update_job_progress(job_id, stage_name, 1.0, "Video ready")
                 return ctx.to_dict()

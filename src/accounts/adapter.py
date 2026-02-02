@@ -4,9 +4,8 @@ Custom allauth adapter for Authentik OAuth integration.
 Maps OAuth user info to our custom User model.
 """
 
-from allauth.account.utils import user_email, user_field
+from allauth.account.utils import user_field
 from allauth.socialaccount.adapter import DefaultSocialAccountAdapter
-from django.utils import timezone
 
 
 class AuthentikSocialAccountAdapter(DefaultSocialAccountAdapter):

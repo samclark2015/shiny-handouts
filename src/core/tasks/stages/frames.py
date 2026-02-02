@@ -3,7 +3,6 @@ Frame matching and AI transformation stage tasks.
 """
 
 import os
-from tempfile import TemporaryDirectory
 from typing import cast
 from uuid import uuid4
 

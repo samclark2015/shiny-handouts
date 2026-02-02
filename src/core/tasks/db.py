@@ -19,7 +19,6 @@ async def create_artifact(job_id: int, artifact_type, file_path: str) -> None:
         file_path: Path to the generated file (local path or S3 key)
         source_id: Deprecated, kept for backwards compatibility (ignored)
     """
-    from core.models import Artifact
 
     if not file_path:
         return

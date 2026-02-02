@@ -17,11 +17,13 @@ PROMPTS_DIR = settings.BASE_DIR / "prompts"
 def read_prompt(name: str) -> str:
     """Read a prompt from the prompts directory."""
     prompt_path = PROMPTS_DIR / f"{name}.md"
-    with open(prompt_path, "r", encoding="utf-8") as f:
+    with open(prompt_path, encoding="utf-8") as f:
         return f.read()
 
 
-def fetch(base: str, cookie: str, url: str, params: dict[str, str] = {}):
+def fetch(base: str, cookie: str, url: str, params: dict[str, str] = None):
+    if params is None:
+        params = {}
     return requests.get(
         f"{base}/{url}", cookies={".ASPXAUTH": cookie}, params=params
     ).json()

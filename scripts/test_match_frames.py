@@ -72,7 +72,7 @@ def match_frames(
     print(f"  Threshold: {threshold}")
     print(f"  Scale factor: {scale_factor}")
     print(f"  Sample interval: {sample_interval_ms}ms")
-    print(f"  Algorithm: Edge-based (Canny + correlation)")
+    print("  Algorithm: Edge-based (Canny + correlation)")
     print()
 
     last_frame = None
@@ -210,7 +210,7 @@ Examples:
         summary_path = os.path.join(args.output, "summary.txt")
         with open(summary_path, "w") as f:
             f.write(f"Video: {args.video}\n")
-            f.write(f"Algorithm: Edge-based (Canny + correlation)\n")
+            f.write("Algorithm: Edge-based (Canny + correlation)\n")
             f.write(f"Threshold: {args.threshold}\n")
             f.write(f"Scale: {args.scale}\n")
             f.write(f"Interval: {args.interval}ms\n")
