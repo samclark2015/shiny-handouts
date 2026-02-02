@@ -73,7 +73,7 @@ async def serve_file(request, job_id: int, artifact_id: int):
             request,
             "mindmap.html",
             {
-                "mermaid_code": mermaid_code,
+                "mermaid_code": mermaid_code.decode("utf-8"),
                 "title": artifact.file_name,
             },
         )
