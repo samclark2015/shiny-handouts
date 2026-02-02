@@ -49,25 +49,30 @@ async def generate_output_task(data: dict) -> dict:
         storage = get_storage()
         await update_job_progress(job_id, stage_name, 0.1, "Downloading images for PDF")
 
-        slides_with_local_images = []
-        for idx, slide in enumerate(slides):
-            # Download image from S3 to temp location
-            local_path = await storage.download_file(slide.image)
-            temp_files.append(local_path)
+        # Parallelize S3 downloads with rate limiting
+        MAX_CONCURRENT_DOWNLOADS = 10
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_DOWNLOADS)
+        completed_count = 0
 
-            # Create new slide with local path
-            slides_with_local_images.append(
-                Slide(image=local_path, caption=slide.caption, extra=slide.extra)
-            )
+        async def download_slide_image(idx: int, slide: Slide):
+            nonlocal completed_count
+            async with semaphore:
+                local_path = await storage.download_file(slide.image)
+                temp_files.append(local_path)
 
-            # Update progress
-            if idx % 10 == 0:
-                progress = 0.1 + (idx / len(slides)) * 0.15
-                await update_job_progress(
-                    job_id, stage_name, progress, "Downloading images for PDF"
-                )
+                # Thread-safe progress update
+                completed_count += 1
+                if idx % 10 == 0:
+                    progress = 0.1 + (completed_count / len(slides)) * 0.15
+                    await update_job_progress(
+                        job_id, stage_name, progress, f"Downloading images ({completed_count}/{len(slides)})"
+                    )
 
-        slides = slides_with_local_images
+                return Slide(image=local_path, caption=slide.caption, extra=slide.extra)
+
+        # Process all downloads concurrently
+        tasks = [download_slide_image(idx, slide) for idx, slide in enumerate(slides)]
+        slides = await asyncio.gather(*tasks)
 
     template_path = settings.BASE_DIR / "templates" / "pdf"
     env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
