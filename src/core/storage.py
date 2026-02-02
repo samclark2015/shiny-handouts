@@ -8,6 +8,7 @@ with both local filesystem and S3 storage, depending on configuration.
 import asyncio
 import mimetypes
 import os
+from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -65,6 +66,427 @@ def is_s3_enabled() -> bool:
     """Check if S3 storage is enabled."""
     config = get_storage_config()
     return config.use_s3 and bool(config.bucket_name)
+
+
+# =============================================================================
+# Abstract Storage Interface
+# =============================================================================
+
+
+class Storage(ABC):
+    """Abstract base class for storage backends."""
+
+    @abstractmethod
+    async def upload_file(
+        self,
+        local_path: str,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload a file to storage.
+
+        Args:
+            local_path: Path to the local file to upload
+            storage_path: Destination path in storage
+            content_type: Optional MIME type
+
+        Returns:
+            The storage path
+        """
+        pass
+
+    @abstractmethod
+    async def upload_bytes(
+        self,
+        data: bytes,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload bytes data to storage.
+
+        Args:
+            data: The bytes to upload
+            storage_path: Destination path in storage
+            content_type: Optional MIME type
+
+        Returns:
+            The storage path
+        """
+        pass
+
+    @abstractmethod
+    async def download_file(
+        self,
+        storage_path: str,
+        local_path: str | None = None,
+    ) -> str:
+        """Download a file from storage to local filesystem.
+
+        Args:
+            storage_path: The storage path
+            local_path: Optional destination local path
+
+        Returns:
+            The local file path
+        """
+        pass
+
+    @abstractmethod
+    async def download_bytes(self, storage_path: str) -> bytes:
+        """Download a file from storage as bytes.
+
+        Args:
+            storage_path: The storage path
+
+        Returns:
+            The file contents as bytes
+        """
+        pass
+
+    @abstractmethod
+    async def file_exists(self, storage_path: str) -> bool:
+        """Check if a file exists in storage.
+
+        Args:
+            storage_path: The storage path
+
+        Returns:
+            True if the file exists
+        """
+        pass
+
+    @abstractmethod
+    async def delete_file(self, storage_path: str) -> None:
+        """Delete a file from storage.
+
+        Args:
+            storage_path: The storage path
+        """
+        pass
+
+    @abstractmethod
+    async def get_file_size(self, storage_path: str) -> int:
+        """Get the size of a file in storage.
+
+        Args:
+            storage_path: The storage path
+
+        Returns:
+            File size in bytes
+        """
+        pass
+
+    @abstractmethod
+    async def get_download_url(
+        self,
+        storage_path: str,
+        expiration: int = 3600,
+        filename: str | None = None,
+    ) -> str:
+        """Get a URL for downloading a file.
+
+        Args:
+            storage_path: The storage path
+            expiration: URL expiration time in seconds
+            filename: Optional filename for Content-Disposition header
+
+        Returns:
+            Download URL (presigned for S3, local path for filesystem)
+        """
+        pass
+
+    @abstractmethod
+    async def list_files(self, prefix: str) -> list[str]:
+        """List files with a given prefix.
+
+        Args:
+            prefix: Path prefix to filter by
+
+        Returns:
+            List of filenames (relative to prefix)
+        """
+        pass
+
+    @asynccontextmanager
+    async def temp_download(self, storage_path: str) -> AsyncIterator[str]:
+        """Context manager that downloads a file to a temp location and cleans up.
+
+        Args:
+            storage_path: The storage path
+
+        Yields:
+            The local file path
+        """
+        temp_path = await self.download_file(storage_path)
+        try:
+            yield temp_path
+        finally:
+            if temp_path != storage_path and os.path.exists(temp_path):
+                os.remove(temp_path)
+
+
+class FilesystemStorage(Storage):
+    """Local filesystem storage implementation."""
+
+    async def upload_file(
+        self,
+        local_path: str,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload a file to local storage (copy if different paths)."""
+        if local_path != storage_path:
+            os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+            if os.path.exists(local_path):
+                import shutil
+
+                shutil.copy2(local_path, storage_path)
+        return storage_path
+
+    async def upload_bytes(
+        self,
+        data: bytes,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Write bytes to local storage."""
+        os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+        with open(storage_path, "wb") as f:
+            f.write(data)
+        return storage_path
+
+    async def download_file(
+        self,
+        storage_path: str,
+        local_path: str | None = None,
+    ) -> str:
+        """Return the storage path (already local)."""
+        if not os.path.exists(storage_path):
+            raise FileNotFoundError(f"File not found: {storage_path}")
+        return storage_path
+
+    async def download_bytes(self, storage_path: str) -> bytes:
+        """Read bytes from local storage."""
+        with open(storage_path, "rb") as f:
+            return f.read()
+
+    async def file_exists(self, storage_path: str) -> bool:
+        """Check if file exists locally."""
+        return os.path.exists(storage_path)
+
+    async def delete_file(self, storage_path: str) -> None:
+        """Delete local file."""
+        if os.path.exists(storage_path):
+            os.remove(storage_path)
+
+    async def get_file_size(self, storage_path: str) -> int:
+        """Get local file size."""
+        return os.path.getsize(storage_path)
+
+    async def get_download_url(
+        self,
+        storage_path: str,
+        expiration: int = 3600,
+        filename: str | None = None,
+    ) -> str:
+        """Return the local path (caller will handle serving)."""
+        return storage_path
+
+    async def list_files(self, prefix: str) -> list[str]:
+        """List files in local directory."""
+        base_path = prefix.rstrip("/")
+        if not os.path.exists(base_path):
+            return []
+
+        files = []
+        for item in os.listdir(base_path):
+            item_path = os.path.join(base_path, item)
+            if os.path.isfile(item_path):
+                files.append(item)
+        return files
+
+    @asynccontextmanager
+    async def temp_download(self, storage_path: str) -> AsyncIterator[str]:
+        """For local storage, just yield the path directly."""
+        yield storage_path
+
+
+class S3Storage(Storage):
+    """S3 storage implementation."""
+
+    def __init__(self, config: StorageConfig):
+        """Initialize S3 storage with configuration."""
+        self.config = config
+
+    @asynccontextmanager
+    async def _get_client(self):
+        """Create an async S3 client context manager."""
+        from botocore.config import Config as BotoConfig
+
+        session = aioboto3.Session()
+
+        boto_config = BotoConfig(
+            s3={"addressing_style": "path" if self.config.use_path_style else "auto"},
+            signature_version="s3v4",
+        )
+
+        client_kwargs = {
+            "region_name": self.config.region,
+            "aws_access_key_id": self.config.access_key_id,
+            "aws_secret_access_key": self.config.secret_access_key,
+            "config": boto_config,
+        }
+
+        if self.config.endpoint_url:
+            client_kwargs["endpoint_url"] = self.config.endpoint_url
+
+        async with session.client("s3", **client_kwargs) as client:
+            yield client
+
+    async def upload_file(
+        self,
+        local_path: str,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload a file to S3."""
+        if not content_type:
+            content_type, _ = mimetypes.guess_type(os.path.basename(storage_path))
+
+        async with self._get_client() as s3:
+            extra_args = {}
+            if content_type:
+                extra_args["ContentType"] = content_type
+
+            await s3.upload_file(
+                local_path,
+                self.config.bucket_name,
+                storage_path,
+                ExtraArgs=extra_args or None,
+            )
+
+        return storage_path
+
+    async def upload_bytes(
+        self,
+        data: bytes,
+        storage_path: str,
+        content_type: str | None = None,
+    ) -> str:
+        """Upload bytes to S3."""
+        if not content_type:
+            content_type, _ = mimetypes.guess_type(os.path.basename(storage_path))
+
+        async with self._get_client() as s3:
+            extra_args = {}
+            if content_type:
+                extra_args["ContentType"] = content_type
+
+            await s3.put_object(
+                Bucket=self.config.bucket_name,
+                Key=storage_path,
+                Body=data,
+                **(extra_args if extra_args else {}),
+            )
+
+        return storage_path
+
+    async def download_file(
+        self,
+        storage_path: str,
+        local_path: str | None = None,
+    ) -> str:
+        """Download a file from S3."""
+        if local_path is None:
+            suffix = os.path.splitext(storage_path)[1]
+            with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
+                local_path = temp.name
+
+        async with self._get_client() as s3:
+            await s3.download_file(self.config.bucket_name, storage_path, local_path)
+
+        return local_path
+
+    async def download_bytes(self, storage_path: str) -> bytes:
+        """Download bytes from S3."""
+        async with self._get_client() as s3:
+            response = await s3.get_object(Bucket=self.config.bucket_name, Key=storage_path)
+            async with response["Body"] as stream:
+                return await stream.read()
+
+    async def file_exists(self, storage_path: str) -> bool:
+        """Check if file exists in S3."""
+        try:
+            async with self._get_client() as s3:
+                await s3.head_object(Bucket=self.config.bucket_name, Key=storage_path)
+            return True
+        except Exception:
+            return False
+
+    async def delete_file(self, storage_path: str) -> None:
+        """Delete file from S3."""
+        async with self._get_client() as s3:
+            await s3.delete_object(Bucket=self.config.bucket_name, Key=storage_path)
+
+    async def get_file_size(self, storage_path: str) -> int:
+        """Get S3 file size."""
+        async with self._get_client() as s3:
+            response = await s3.head_object(Bucket=self.config.bucket_name, Key=storage_path)
+            return response["ContentLength"]
+
+    async def get_download_url(
+        self,
+        storage_path: str,
+        expiration: int = 3600,
+        filename: str | None = None,
+    ) -> str:
+        """Generate presigned URL for S3."""
+        params = {
+            "Bucket": self.config.bucket_name,
+            "Key": storage_path,
+        }
+
+        if filename and not self.config.skip_content_disposition:
+            params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+
+        async with self._get_client() as s3:
+            url = await s3.generate_presigned_url(
+                "get_object",
+                Params=params,
+                ExpiresIn=expiration,
+            )
+
+        return url
+
+    async def list_files(self, prefix: str) -> list[str]:
+        """List files in S3 with prefix."""
+        files = []
+        prefix_with_slash = prefix if prefix.endswith("/") else f"{prefix}/"
+
+        async with self._get_client() as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(
+                Bucket=self.config.bucket_name, Prefix=prefix_with_slash
+            ):
+                for obj in page.get("Contents", []):
+                    key = obj["Key"]
+                    filename = key[len(prefix_with_slash) :]
+                    if filename and "/" not in filename:
+                        files.append(filename)
+
+        return files
+
+
+def get_storage() -> Storage:
+    """Factory function to get the appropriate storage backend.
+
+    Returns:
+        Storage instance based on configuration
+    """
+    config = get_storage_config()
+    if config.use_s3 and config.bucket_name:
+        return S3Storage(config)
+    return FilesystemStorage()
 
 
 # =============================================================================
@@ -228,34 +650,6 @@ def get_local_path(storage_type: StorageType, filename: str, source_id: str | No
     return str(base_dir / filename)
 
 
-@asynccontextmanager
-async def get_s3_client():
-    """Create an async S3 client context manager."""
-    from botocore.config import Config as BotoConfig
-
-    config = get_storage_config()
-    session = aioboto3.Session()
-
-    # Configure client for S3-compatible services
-    boto_config = BotoConfig(
-        s3={"addressing_style": "path" if config.use_path_style else "auto"},
-        signature_version="s3v4",
-    )
-
-    client_kwargs = {
-        "region_name": config.region,
-        "aws_access_key_id": config.access_key_id,
-        "aws_secret_access_key": config.secret_access_key,
-        "config": boto_config,
-    }
-
-    if config.endpoint_url:
-        client_kwargs["endpoint_url"] = config.endpoint_url
-
-    async with session.client("s3", **client_kwargs) as client:
-        yield client
-
-
 async def upload_file(
     local_path: str,
     storage_type: StorageType,
@@ -276,31 +670,14 @@ async def upload_file(
     if filename is None:
         filename = os.path.basename(local_path)
 
-    if not is_s3_enabled():
-        # For local storage, file is already in place or needs to be copied
-        dest_path = get_local_path(storage_type, filename, source_id)
-        if local_path != dest_path:
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            if os.path.exists(local_path):
-                import shutil
+    storage = get_storage()
 
-                shutil.copy2(local_path, dest_path)
-        return dest_path
+    if isinstance(storage, FilesystemStorage):
+        storage_path = get_local_path(storage_type, filename, source_id)
+    else:
+        storage_path = get_s3_key(storage_type, filename, source_id)
 
-    # Upload to S3
-    config = get_storage_config()
-    s3_key = get_s3_key(storage_type, filename, source_id)
-
-    content_type, _ = mimetypes.guess_type(filename)
-
-    async with get_s3_client() as s3:
-        extra_args = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
-        await s3.upload_file(local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None)
-
-    return s3_key
+    return await storage.upload_file(local_path, storage_path)
 
 
 async def upload_bytes(
@@ -322,34 +699,14 @@ async def upload_bytes(
     Returns:
         The storage path (S3 key or local path)
     """
-    if not is_s3_enabled():
-        # Write to local filesystem
-        dest_path = get_local_path(storage_type, filename, source_id)
-        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-        with open(dest_path, "wb") as f:
-            f.write(data)
-        return dest_path
+    storage = get_storage()
 
-    # Upload to S3
-    config = get_storage_config()
-    s3_key = get_s3_key(storage_type, filename, source_id)
+    if isinstance(storage, FilesystemStorage):
+        storage_path = get_local_path(storage_type, filename, source_id)
+    else:
+        storage_path = get_s3_key(storage_type, filename, source_id)
 
-    if not content_type:
-        content_type, _ = mimetypes.guess_type(filename)
-
-    async with get_s3_client() as s3:
-        extra_args = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
-        await s3.put_object(
-            Bucket=config.bucket_name,
-            Key=s3_key,
-            Body=data,
-            **(extra_args if extra_args else {}),
-        )
-
-    return s3_key
+    return await storage.upload_bytes(data, storage_path, content_type)
 
 
 async def download_file(
@@ -367,25 +724,8 @@ async def download_file(
     Returns:
         The local file path
     """
-    if not is_s3_enabled():
-        # For local storage, the storage_path IS the local path
-        if os.path.exists(storage_path):
-            return storage_path
-        raise FileNotFoundError(f"File not found: {storage_path}")
-
-    # Download from S3
-    config = get_storage_config()
-
-    if local_path is None:
-        # Create a temp file
-        suffix = os.path.splitext(storage_path)[1]
-        with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
-            local_path = temp.name
-
-    async with get_s3_client() as s3:
-        await s3.download_file(config.bucket_name, storage_path, local_path)
-
-    return local_path
+    storage = get_storage()
+    return await storage.download_file(storage_path, local_path)
 
 
 async def download_bytes(storage_path: str) -> bytes:
@@ -397,16 +737,8 @@ async def download_bytes(storage_path: str) -> bytes:
     Returns:
         The file contents as bytes
     """
-    if not is_s3_enabled():
-        with open(storage_path, "rb") as f:
-            return f.read()
-
-    config = get_storage_config()
-
-    async with get_s3_client() as s3:
-        response = await s3.get_object(Bucket=config.bucket_name, Key=storage_path)
-        async with response["Body"] as stream:
-            return await stream.read()
+    storage = get_storage()
+    return await storage.download_bytes(storage_path)
 
 
 async def file_exists(
@@ -426,24 +758,16 @@ async def file_exists(
     Returns:
         True if the file exists
     """
+    storage = get_storage()
+
     # Build path if components provided
     if storage_type and filename:
-        if is_s3_enabled():
-            storage_path = get_s3_key(storage_type, filename, source_id)
-        else:
+        if isinstance(storage, FilesystemStorage):
             storage_path = get_local_path(storage_type, filename, source_id)
+        else:
+            storage_path = get_s3_key(storage_type, filename, source_id)
 
-    if not is_s3_enabled():
-        return os.path.exists(storage_path)
-
-    config = get_storage_config()
-
-    try:
-        async with get_s3_client() as s3:
-            await s3.head_object(Bucket=config.bucket_name, Key=storage_path)
-        return True
-    except Exception:
-        return False
+    return await storage.file_exists(storage_path)
 
 
 async def delete_file(storage_path: str) -> None:
@@ -452,15 +776,8 @@ async def delete_file(storage_path: str) -> None:
     Args:
         storage_path: The storage path (S3 key or local path)
     """
-    if not is_s3_enabled():
-        if os.path.exists(storage_path):
-            os.remove(storage_path)
-        return
-
-    config = get_storage_config()
-
-    async with get_s3_client() as s3:
-        await s3.delete_object(Bucket=config.bucket_name, Key=storage_path)
+    storage = get_storage()
+    await storage.delete_file(storage_path)
 
 
 async def get_file_size(storage_path: str) -> int:
@@ -472,14 +789,8 @@ async def get_file_size(storage_path: str) -> int:
     Returns:
         File size in bytes
     """
-    if not is_s3_enabled():
-        return os.path.getsize(storage_path)
-
-    config = get_storage_config()
-
-    async with get_s3_client() as s3:
-        response = await s3.head_object(Bucket=config.bucket_name, Key=storage_path)
-        return response["ContentLength"]
+    storage = get_storage()
+    return await storage.get_file_size(storage_path)
 
 
 async def generate_presigned_url(
@@ -498,30 +809,17 @@ async def generate_presigned_url(
     Returns:
         The presigned URL, or the local path if S3 is disabled
     """
-    if not is_s3_enabled():
-        # Return local path - caller will need to handle serving
-        return storage_path
+    storage = get_storage()
 
-    config = get_storage_config()
+    # Extract filename from Content-Disposition header if provided
+    filename = None
+    if response_content_disposition:
+        # Parse: attachment; filename="example.pdf"
+        parts = response_content_disposition.split("filename=")
+        if len(parts) > 1:
+            filename = parts[1].strip('"')
 
-    params = {
-        "Bucket": config.bucket_name,
-        "Key": storage_path,
-    }
-
-    # Some S3-compatible services (SeaweedFS, etc.) don't properly handle
-    # ResponseContentDisposition in presigned URL signature calculation
-    if response_content_disposition and not config.skip_content_disposition:
-        params["ResponseContentDisposition"] = response_content_disposition
-
-    async with get_s3_client() as s3:
-        url = await s3.generate_presigned_url(
-            "get_object",
-            Params=params,
-            ExpiresIn=expiration,
-        )
-
-    return url
+    return await storage.get_download_url(storage_path, expiration, filename)
 
 
 @asynccontextmanager
@@ -534,22 +832,9 @@ async def temp_download(storage_path: str) -> AsyncIterator[str]:
     Yields:
         The local file path (temp file for S3, original for local)
     """
-    if not is_s3_enabled():
-        # Local storage - just yield the path directly
-        yield storage_path
-        return
-
-    # S3 storage - download to temp file
-    suffix = os.path.splitext(storage_path)[1]
-    with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
-        temp_path = temp.name
-
-    try:
-        await download_file(storage_path, temp_path)
-        yield temp_path
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+    storage = get_storage()
+    async with storage.temp_download(storage_path) as local_path:
+        yield local_path
 
 
 @asynccontextmanager
@@ -578,38 +863,16 @@ async def list_files(
     Returns:
         List of filenames (not full paths/keys)
     """
-    if not is_s3_enabled():
+    storage = get_storage()
+
+    if isinstance(storage, FilesystemStorage):
         base_path = get_local_path(storage_type, "", source_id).rstrip("/")
-        if not os.path.exists(base_path):
-            return []
-
-        files = []
-        for item in os.listdir(base_path):
-            if prefix and not item.startswith(prefix):
-                continue
-            if os.path.isfile(os.path.join(base_path, item)):
-                files.append(item)
-        return files
-
-    # S3 storage
-    config = get_storage_config()
-    s3_prefix = get_s3_key(storage_type, "", source_id)
-    if prefix:
-        s3_prefix = f"{s3_prefix}{prefix}"
-
-    files = []
-
-    async with get_s3_client() as s3:
-        paginator = s3.get_paginator("list_objects_v2")
-        async for page in paginator.paginate(Bucket=config.bucket_name, Prefix=s3_prefix):
-            for obj in page.get("Contents", []):
-                key = obj["Key"]
-                # Extract filename from key
-                filename = key[len(s3_prefix) :].lstrip("/")
-                if filename and "/" not in filename:  # Only direct children
-                    files.append(filename)
-
-    return files
+        return await storage.list_files(base_path)
+    else:
+        s3_prefix = get_s3_key(storage_type, "", source_id)
+        if prefix:
+            s3_prefix = f"{s3_prefix}{prefix}"
+        return await storage.list_files(s3_prefix)
 
 
 async def upload_source_file(
@@ -632,29 +895,10 @@ async def upload_source_file(
     if filename is None:
         filename = os.path.basename(local_path)
 
-    if not is_s3_enabled():
-        dest_path = get_source_local_path(user_id, source_id, filename)
-        if local_path != dest_path:
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            if os.path.exists(local_path):
-                import shutil
+    storage = get_storage()
+    storage_path = get_source_path(user_id, source_id, filename)
 
-                shutil.copy2(local_path, dest_path)
-        return dest_path
-
-    config = get_storage_config()
-    s3_key = get_source_key(user_id, source_id, filename)
-
-    content_type, _ = mimetypes.guess_type(filename)
-
-    async with get_s3_client() as s3:
-        extra_args = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
-        await s3.upload_file(local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None)
-
-    return s3_key
+    return await storage.upload_file(local_path, storage_path)
 
 
 async def upload_job_file(
@@ -677,29 +921,10 @@ async def upload_job_file(
     if filename is None:
         filename = os.path.basename(local_path)
 
-    if not is_s3_enabled():
-        dest_path = get_job_local_path(user_id, job_id, filename)
-        if local_path != dest_path:
-            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
-            if os.path.exists(local_path):
-                import shutil
+    storage = get_storage()
+    storage_path = get_job_path(user_id, job_id, filename)
 
-                shutil.copy2(local_path, dest_path)
-        return dest_path
-
-    config = get_storage_config()
-    s3_key = get_job_key(user_id, job_id, filename)
-
-    content_type, _ = mimetypes.guess_type(filename)
-
-    async with get_s3_client() as s3:
-        extra_args = {}
-        if content_type:
-            extra_args["ContentType"] = content_type
-
-        await s3.upload_file(local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None)
-
-    return s3_key
+    return await storage.upload_file(local_path, storage_path)
 
 
 def sync_upload_file(
