@@ -61,7 +61,6 @@ def serve_file(request, filename: str):
         # Verify the artifact exists and belongs to user
         artifact = Artifact.objects.filter(
             file_name=filename,
-            job__user=request.user,
         ).first()
 
         if not artifact:
