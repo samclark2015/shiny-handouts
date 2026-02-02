@@ -10,6 +10,7 @@ from core.tasks.context import TaskContext
 from core.tasks.db import update_job_source_info
 from core.tasks.progress import update_job_progress
 from core.tasks.video import hash_file
+from pipeline.ai import set_ai_context
 
 
 @broker.task
@@ -39,6 +40,9 @@ async def generate_context_task(job_id: int, input_type: str, input_data: str) -
 
     # Update job with source_id early
     await update_job_source_info(job_id, source_id)
+
+    # Set AI context for tracking
+    set_ai_context(user_id=user_id, job_id=job_id)
 
     # Load settings from profile (if set)
     vignette_prompt = None

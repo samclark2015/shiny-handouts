@@ -10,5 +10,6 @@ urlpatterns = [
     path("auth/", include("accounts.urls")),
     path("auth/", include("allauth.urls")),  # allauth URLs without namespace
     path("api/", include("core.urls.api")),
+    path("analytics/", include("core.urls.analytics")),
     path("", include("core.urls.main")),
 ]

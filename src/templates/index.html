@@ -14,6 +14,12 @@
                class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md text-sm font-medium transition-colors">
                 <i class="fa-solid fa-list-check mr-1"></i>Profiles
             </a>
+            {% if user.is_staff %}
+            <a href="{% url 'analytics_dashboard' %}" 
+               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-chart-line mr-1"></i>Analytics
+            </a>
+            {% endif %}
             {% if user.is_superuser %}
             <a href="{% url 'admin:index' %}" 
                class="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">

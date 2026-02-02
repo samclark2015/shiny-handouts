@@ -2,6 +2,9 @@ import base64
 import json
 import logging
 import os
+import time
+from contextvars import ContextVar
+from decimal import Decimal
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
@@ -24,6 +27,77 @@ key = os.environ["OPENAI_API_KEY"]
 # OpenAI client for all API calls
 client = AsyncOpenAI(api_key=key)
 
+# Context variables for tracking user/job info across async calls
+_current_user_id: ContextVar[int | None] = ContextVar("current_user_id", default=None)
+_current_job_id: ContextVar[int | None] = ContextVar("current_job_id", default=None)
+
+# Model pricing in USD per 1M tokens (input/output)
+MODEL_PRICING = {
+    "gpt-4.1-nano": (0.10, 0.40),  # Example pricing
+    "gpt-5-mini": (0.25, 2.00),  # Example pricing
+    "whisper-1": (0.006, 0.006),  # Per minute pricing, approximated as tokens
+}
+
+
+def set_ai_context(user_id: int | None = None, job_id: int | None = None):
+    """Set the current user/job context for AI request tracking."""
+    if user_id is not None:
+        _current_user_id.set(user_id)
+    if job_id is not None:
+        _current_job_id.set(job_id)
+
+
+def clear_ai_context():
+    """Clear the AI request context."""
+    _current_user_id.set(None)
+    _current_job_id.set(None)
+
+
+def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> Decimal:
+    """Calculate estimated cost for an API call."""
+    if model not in MODEL_PRICING:
+        return Decimal("0.00")
+
+    input_price, output_price = MODEL_PRICING[model]
+    input_cost = Decimal(str(prompt_tokens)) * Decimal(str(input_price)) / Decimal("1000000")
+    output_cost = Decimal(str(completion_tokens)) * Decimal(str(output_price)) / Decimal("1000000")
+    return input_cost + output_cost
+
+
+async def track_ai_request(
+    function_name: str,
+    model: str,
+    prompt_tokens: int = 0,
+    completion_tokens: int = 0,
+    duration_ms: int | None = None,
+    cached: bool = False,
+    success: bool = True,
+    error_message: str | None = None,
+):
+    """Track an AI request in the database."""
+    from core.models import AIRequest
+
+    user_id = _current_user_id.get()
+    job_id = _current_job_id.get()
+
+    total_tokens = prompt_tokens + completion_tokens
+    estimated_cost = calculate_cost(model, prompt_tokens, completion_tokens)
+
+    await AIRequest.objects.acreate(
+        function_name=function_name,
+        model=model,
+        user_id=user_id,
+        job_id=job_id,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        estimated_cost_usd=estimated_cost,
+        duration_ms=duration_ms,
+        cached=cached,
+        success=success,
+        error_message=error_message,
+    )
+
 
 def ai_checkpoint(func):
     """
@@ -31,21 +105,45 @@ def ai_checkpoint(func):
 
     This caches the result based on the function name and arguments,
     automatically skipping expensive AI calls if the same inputs are provided again.
+    Also tracks all requests in the database for cost analysis.
     """
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
         func_name = func.__name__
+        start_time = time.time()
+
         # Try to get cached result
         cached = get_ai_cached_result(func_name, *args, **kwargs)
         if cached is not None:
             logging.info(f"[AI Checkpoint] Using cached result for {func_name}")
+            # Track as cached request (no tokens used)
+            duration_ms = int((time.time() - start_time) * 1000)
+            await track_ai_request(
+                function_name=func_name,
+                model="cached",
+                cached=True,
+                duration_ms=duration_ms,
+            )
             return cached
 
         # Execute the function and cache the result
         logging.info(f"[AI Checkpoint] Executing {func_name} (no cache hit)")
-        result = await func(*args, **kwargs)
-        set_ai_cached_result(func_name, result, *args, **kwargs)
+        try:
+            result = await func(*args, **kwargs)
+            set_ai_cached_result(func_name, result, *args, **kwargs)
+        except Exception as e:
+            error_msg = str(e)
+            # Track failed request
+            duration_ms = int((time.time() - start_time) * 1000)
+            await track_ai_request(
+                function_name=func_name,
+                model="unknown",
+                success=False,
+                error_message=error_msg,
+                duration_ms=duration_ms,
+            )
+            raise
 
         return result
 
@@ -54,6 +152,8 @@ def ai_checkpoint(func):
 
 @ai_checkpoint
 async def generate_captions(video_path: str) -> list[Caption]:
+    start_time = time.time()
+
     video: AudioSegment = AudioSegment.from_file(video_path, format="mp4")
     audio: AudioSegment = video.set_channels(1).set_frame_rate(16000).set_sample_width(2)
 
@@ -75,11 +175,26 @@ async def generate_captions(video_path: str) -> list[Caption]:
         raise ValueError("No segments found in the response")
 
     captions = [Caption(text=seg.text, timestamp=seg.start) for seg in segs if seg.text]
+
+    # Track the request (Whisper doesn't return token counts, estimate from duration)
+    duration_ms = int((time.time() - start_time) * 1000)
+    audio_duration_seconds = len(audio) / 1000.0
+    # Rough estimate: 1 minute = ~500 tokens
+    estimated_tokens = int(audio_duration_seconds / 60.0 * 500)
+    await track_ai_request(
+        function_name="generate_captions",
+        model="whisper-1",
+        prompt_tokens=estimated_tokens,
+        completion_tokens=0,
+        duration_ms=duration_ms,
+    )
+
     return captions
 
 
 @ai_checkpoint
 async def clean_transcript(content: str) -> str:
+    start_time = time.time()
     prompt = read_prompt("clean_transcript")
 
     response = await client.responses.create(
@@ -89,11 +204,25 @@ async def clean_transcript(content: str) -> str:
             {"role": "user", "content": content},
         ],
     )
+
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="clean_transcript",
+            model=FAST_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
+
     return response.output_text
 
 
 @ai_checkpoint
 async def gen_keypoints(content: str, slide_path: str) -> str:
+    start_time = time.time()
     prompt = read_prompt("gen_keypoints")
 
     # Read and encode the image
@@ -122,11 +251,25 @@ async def gen_keypoints(content: str, slide_path: str) -> str:
             },
         ],
     )
+
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="gen_keypoints",
+            model=SMART_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
+
     return response.output_text
 
 
 @ai_checkpoint
 async def generate_title(html: str) -> str:
+    start_time = time.time()
     prompt = read_prompt("generate_title")
     full_prompt = f"{prompt}\nHTML:\n\n{html}"
 
@@ -136,6 +279,19 @@ async def generate_title(html: str) -> str:
             {"role": "user", "content": full_prompt},
         ],
     )
+
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="generate_title",
+            model=FAST_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
+
     return response.output_text
 
 
@@ -187,6 +343,7 @@ async def generate_spreadsheet_helper(
         custom_prompt: Optional custom prompt to use instead of default.
         custom_columns: Optional custom column configuration for the LLM.
     """
+    start_time = time.time()
     prompt = custom_prompt or read_prompt("generate_spreadsheet")
 
     schema = _build_column_schema(custom_columns)
@@ -213,6 +370,18 @@ async def generate_spreadsheet_helper(
         text={"format": {"type": "json_schema", "name": "SpreadsheetResponse", "schema": schema}},
     )
 
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="generate_spreadsheet_helper",
+            model=SMART_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
+
     value = response.output_text
     if not value:
         raise ValueError("No output received from LLM")
@@ -231,6 +400,7 @@ async def generate_vignette_questions(
         filename: Path to the PDF file.
         custom_prompt: Optional custom prompt to use instead of default.
     """
+    start_time = time.time()
     prompt = custom_prompt or read_prompt("generate_vignette_questions")
 
     # Read and encode the PDF
@@ -255,6 +425,18 @@ async def generate_vignette_questions(
         text_format=VignetteQuestions,
     )
 
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="generate_vignette_questions",
+            model=SMART_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
+
     value = response.output_text
     if not value:
         raise ValueError("No output received from LLM")
@@ -276,6 +458,7 @@ async def generate_mindmap(
     Returns:
         List of tuples containing (title, mermaid_code) for each mindmap.
     """
+    start_time = time.time()
     prompt = custom_prompt or read_prompt("generate_mindmap")
 
     # Read and encode the PDF
@@ -299,6 +482,18 @@ async def generate_mindmap(
         ],
         text_format=MindmapResponse,
     )
+
+    # Track the request
+    duration_ms = int((time.time() - start_time) * 1000)
+    usage = getattr(response, "usage", None)
+    if usage:
+        await track_ai_request(
+            function_name="generate_mindmap",
+            model=SMART_MODEL,
+            prompt_tokens=getattr(usage, "input_tokens", 0),
+            completion_tokens=getattr(usage, "output_tokens", 0),
+            duration_ms=duration_ms,
+        )
 
     value = response.output_text
     if not value:

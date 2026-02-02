@@ -30,6 +30,72 @@ class ArtifactType(models.TextChoices):
     MERMAID_MINDMAP = "mermaid_mindmap", "Mermaid Mindmap"
 
 
+class AIRequest(models.Model):
+    """Tracks AI/LLM API requests for cost analysis and debugging."""
+
+    # Request metadata
+    function_name = models.CharField(max_length=100, db_index=True)
+    model = models.CharField(max_length=50)
+
+    # Relationships
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_requests",
+    )
+    job = models.ForeignKey(
+        "Job",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_requests",
+    )
+
+    # Token usage and costs
+    prompt_tokens = models.IntegerField(default=0)
+    completion_tokens = models.IntegerField(default=0)
+    total_tokens = models.IntegerField(default=0)
+    estimated_cost_usd = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
+        null=True,
+        blank=True,
+        help_text="Estimated cost in USD based on model pricing",
+    )
+
+    # Performance metrics
+    duration_ms = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Request duration in milliseconds",
+    )
+
+    # Status tracking
+    cached = models.BooleanField(default=False, help_text="Whether result was from cache")
+    success = models.BooleanField(default=True)
+    error_message = models.TextField(blank=True, null=True)
+
+    # Timing
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        db_table = "ai_requests"
+        ordering = ["-created_at"]
+        verbose_name = "AI request"
+        verbose_name_plural = "AI requests"
+        indexes = [
+            models.Index(fields=["-created_at", "user"]),
+            models.Index(fields=["-created_at", "job"]),
+            models.Index(fields=["function_name", "-created_at"]),
+        ]
+
+    def __str__(self):
+        job_info = f" (Job {self.job_id})" if self.job_id else ""
+        return f"{self.function_name} - {self.model}{job_info} [{self.created_at}]"
+
+
 class Job(models.Model):
     """Job model for tracking pipeline tasks."""
 

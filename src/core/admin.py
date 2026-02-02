@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 
-from .models import Artifact, Job
+from .models import AIRequest, Artifact, Job
 
 
 @admin.register(Job)
@@ -73,3 +73,94 @@ class ArtifactAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
     readonly_fields = ("created_at",)
     raw_id_fields = ("job",)
+
+
+@admin.register(AIRequest)
+class AIRequestAdmin(admin.ModelAdmin):
+    """Admin configuration for AI Request model."""
+
+    list_display = (
+        "id",
+        "function_name",
+        "model",
+        "user",
+        "job",
+        "total_tokens",
+        "estimated_cost_usd",
+        "duration_ms",
+        "cached",
+        "success",
+        "created_at",
+    )
+    list_filter = (
+        "model",
+        "function_name",
+        "cached",
+        "success",
+        "created_at",
+    )
+    search_fields = (
+        "function_name",
+        "user__email",
+        "job__label",
+        "job__title",
+    )
+    ordering = ("-created_at",)
+    readonly_fields = (
+        "function_name",
+        "model",
+        "user",
+        "job",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "estimated_cost_usd",
+        "duration_ms",
+        "cached",
+        "success",
+        "error_message",
+        "created_at",
+    )
+    raw_id_fields = ("user", "job")
+
+    fieldsets = (
+        (
+            "Request Info",
+            {
+                "fields": (
+                    "function_name",
+                    "model",
+                    "cached",
+                    "success",
+                    "error_message",
+                )
+            },
+        ),
+        (
+            "Relationships",
+            {
+                "fields": ("user", "job"),
+            },
+        ),
+        (
+            "Usage & Cost",
+            {
+                "fields": (
+                    "prompt_tokens",
+                    "completion_tokens",
+                    "total_tokens",
+                    "estimated_cost_usd",
+                    "duration_ms",
+                )
+            },
+        ),
+        ("Timestamp", {"fields": ("created_at",)}),
+    )
+
+    def has_add_permission(self, request):
+        """Disable manual creation of AI requests."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        """Make AI requests read-only."""
+        return False
