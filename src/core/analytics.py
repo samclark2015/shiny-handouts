@@ -154,3 +154,51 @@ async def get_function_usage_breakdown(user_id: int | None = None, days: int = 3
         results.append(stat)
 
     return results
+
+
+async def get_all_users_overview(days: int = 30):
+    """Get overview of all users' AI usage and costs."""
+    from datetime import timedelta
+
+    from django.conf import settings
+    from django.utils import timezone
+
+    from .models import AIRequest
+
+    cutoff_date = timezone.now() - timedelta(days=days)
+
+    # Get stats grouped by user
+    user_stats = (
+        AIRequest.objects.filter(created_at__gte=cutoff_date, user_id__isnull=False)
+        .values("user_id", "user__email", "user__name")
+        .annotate(
+            total_requests=Count("id"),
+            total_tokens=Sum("total_tokens"),
+            total_cost=Sum("estimated_cost_usd"),
+            cached_requests=Count("id", filter=Q(cached=True)),
+            failed_requests=Count("id", filter=Q(success=False)),
+        )
+        .order_by("-total_cost")
+    )
+
+    results = []
+    async for stat in user_stats:
+        total = stat["total_requests"] or 0
+        cached = stat["cached_requests"] or 0
+        cache_hit_rate = (cached / total * 100) if total > 0 else 0
+
+        results.append(
+            {
+                "user_id": stat["user_id"],
+                "user_email": stat["user__email"],
+                "user_name": stat["user__name"] or stat["user__email"],
+                "total_requests": total,
+                "total_tokens": stat["total_tokens"] or 0,
+                "total_cost_usd": stat["total_cost"] or Decimal("0.00"),
+                "cached_requests": cached,
+                "failed_requests": stat["failed_requests"] or 0,
+                "cache_hit_rate": round(cache_hit_rate, 2),
+            }
+        )
+
+    return results
