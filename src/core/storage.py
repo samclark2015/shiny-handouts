@@ -6,6 +6,7 @@ with both local filesystem and S3 storage, depending on configuration.
 """
 
 import asyncio
+import logging
 import mimetypes
 import os
 from abc import ABC, abstractmethod
@@ -403,7 +404,15 @@ class S3Storage(Storage):
                 local_path = temp.name
 
         async with self._get_client() as s3:
-            await s3.download_file(self.config.bucket_name, storage_path, local_path)
+            response = await s3.get_object(Bucket=self.config.bucket_name, Key=storage_path)
+            body = response["Body"]
+
+            with open(local_path, "wb") as out_file:
+                while True:
+                    chunk = await body.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    out_file.write(chunk)
 
         return local_path
 

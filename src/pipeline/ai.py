@@ -120,7 +120,7 @@ def ai_checkpoint(func):
         logging.info(f"[AI Checkpoint] Executing {func_name} (no cache hit)")
         try:
             result = await func(*args, **kwargs)
-            set_ai_cached_result(func_name, result, *args, **kwargs)
+            set_ai_cached_result(func_name, result, *args, **cache_kwargs)
         except Exception as e:
             error_msg = str(e)
             # Track failed request
