@@ -23,6 +23,9 @@ class TaskContext:
     slides: list[dict] | None = None
     outputs: dict | None = None
 
+    # Extracted images from slides (for spreadsheet generation)
+    extracted_images: list[dict] | None = None
+
     # Per-job settings
     enable_excel: bool = True
     enable_vignette: bool = True

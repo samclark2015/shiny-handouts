@@ -13,6 +13,7 @@ from .artifacts import (
 from .context import generate_context_task
 from .finalize import finalize_job_task
 from .frames import match_frames_task, transform_slides_ai_task
+from .images import extract_images_task
 from .output import compress_pdf_task, generate_output_task
 from .video import download_video_task, extract_captions_task
 
@@ -25,6 +26,8 @@ __all__ = [
     # Frames
     "match_frames_task",
     "transform_slides_ai_task",
+    # Images
+    "extract_images_task",
     # Output
     "generate_output_task",
     "compress_pdf_task",

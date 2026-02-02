@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 class StudyTable(BaseModel):
     """Study table containing rows of medical conditions."""
 
-    rows: list[dict[str, str]] = Field(
+    rows: list[dict[str, str | list[str]]] = Field(
         description="Array of CSV rows. Each item maps 1:1 to a CSV row with the specified headers."
     )
 
@@ -58,9 +58,7 @@ class Mindmap(BaseModel):
     title: str = Field(
         description="Short descriptive title for the mindmap (e.g., 'Glomerular Disease Classification')"
     )
-    mermaid_code: str = Field(
-        description="Valid Mermaid mindmap syntax starting with 'mindmap'"
-    )
+    mermaid_code: str = Field(description="Valid Mermaid mindmap syntax starting with 'mindmap'")
 
 
 class MindmapResponse(BaseModel):

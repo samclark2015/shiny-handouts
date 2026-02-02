@@ -47,13 +47,14 @@ os.makedirs(FRAMES_DIR, exist_ok=True)
 # Note: generate_artifacts is a parallel stage that includes spreadsheet, vignette, and mindmap
 STAGE_WEIGHTS = {
     "generate_context": 0.02,  # 2%
-    "download_video": 0.15,  # 15%
-    "extract_captions": 0.15,  # 15%
-    "match_frames": 0.15,  # 15%
-    "transform_slides_with_ai": 0.15,  # 15%
+    "download_video": 0.12,  # 12%
+    "extract_captions": 0.12,  # 12%
+    "match_frames": 0.12,  # 12%
+    "extract_images": 0.08,  # 8% (new stage)
+    "transform_slides_with_ai": 0.12,  # 12%
     "generate_output": 0.10,  # 10%
     "compress_pdf": 0.08,  # 8%
-    "generate_artifacts": 0.18,  # 18% (parallel: spreadsheet + vignette + mindmap)
+    "generate_artifacts": 0.22,  # 22% (parallel: spreadsheet + vignette + mindmap)
     "finalize_job": 0.02,  # 2%
 }
 

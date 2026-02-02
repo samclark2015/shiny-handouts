@@ -12,12 +12,7 @@ from typing import cast
 from django.conf import settings
 from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from pydub import AudioSegment
-from tenacity import (
-    retry,
-    retry_if_exception_type,
-    stop_after_attempt,
-    wait_exponential,
-)
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from core.cache import get_ai_cached_result, set_ai_cached_result
 
@@ -328,8 +323,13 @@ async def generate_title(html: str, user_id: int | None = None, job_id: int | No
     return response.output_text
 
 
-def _build_column_schema(columns: list[dict] | None) -> dict:
-    """Build the column configuration section for the spreadsheet prompt."""
+def _build_column_schema(columns: list[dict] | None, include_images: bool = False) -> dict:
+    """Build the column configuration section for the spreadsheet prompt.
+
+    Args:
+        columns: Column configuration list
+        include_images: Whether to include image_ids field in schema
+    """
     if not columns:
         default_columns_path = settings.BASE_DIR / "prompts" / "default_spreadsheet_columns.json"
         with open(default_columns_path) as f:
@@ -340,6 +340,17 @@ def _build_column_schema(columns: list[dict] | None) -> dict:
     properties = {
         col["name"]: {"type": "string", "description": col["description"]} for col in columns
     }
+
+    # Add image_ids field if images are provided
+    if include_images:
+        properties["image_ids"] = {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of image IDs (e.g., 'img_001', 'img_002') from the provided images that are relevant to this row. Include images showing histology, pathology, clinical findings, or diagrams for this specific condition. Leave empty if no relevant images.",
+        }
+
+    required_fields = [*names, "image_ids"] if include_images else names
+
     schema = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://example.org/schemas/study-table.schema.json",
@@ -354,7 +365,7 @@ def _build_column_schema(columns: list[dict] | None) -> dict:
                 "items": {
                     "type": "object",
                     "additionalProperties": False,
-                    "required": names,
+                    "required": required_fields,
                     "properties": properties,
                 },
             }
@@ -374,6 +385,7 @@ async def generate_spreadsheet_helper(
     filename: str,
     custom_prompt: str | None = None,
     custom_columns: list[dict] | None = None,
+    extracted_images: list[dict] | None = None,
     user_id: int | None = None,
     job_id: int | None = None,
 ) -> StudyTable:
@@ -383,31 +395,73 @@ async def generate_spreadsheet_helper(
         filename: Path to the PDF file.
         custom_prompt: Optional custom prompt to use instead of default.
         custom_columns: Optional custom column configuration for the LLM.
+        extracted_images: Optional list of extracted image dicts with 'path' and metadata.
         user_id: User ID for tracking.
         job_id: Job ID for tracking.
     """
     start_time = time.time()
     prompt = custom_prompt or read_prompt("generate_spreadsheet")
 
-    schema = _build_column_schema(custom_columns)
+    has_images = bool(extracted_images)
+    schema = _build_column_schema(custom_columns, include_images=has_images)
 
     # Read and encode the PDF
     with open(filename, "rb") as pdf_file:
         pdf_data = base64.b64encode(pdf_file.read()).decode("utf-8")
 
+    # Build user content with PDF
+    user_content: list[dict] = [
+        {
+            "type": "input_file",
+            "filename": filename,
+            "file_data": f"data:application/pdf;base64,{pdf_data}",
+        },
+    ]
+
+    # Add extracted images if provided
+    if extracted_images:
+        # Add instruction about images
+        image_instruction = (
+            "\n\nThe following images were extracted from the lecture slides. "
+            "Each image has an ID (e.g., 'img_001'). For each row in the study table, "
+            "include the 'image_ids' field with a list of image IDs that are relevant "
+            "to that specific condition (histology, pathology, clinical findings, diagrams). "
+            "Only include images that are clearly related to the condition in that row."
+        )
+        user_content.insert(0, {"type": "input_text", "text": image_instruction})
+
+        # Add each image with its ID
+        for idx, img_data in enumerate(extracted_images):
+            img_id = f"img_{idx:03d}"
+            img_path = img_data.get("path", "")
+            slide_idx = img_data.get("slide_index", 0)
+
+            # Read and encode the image
+            try:
+                with open(img_path, "rb") as img_file:
+                    img_bytes = base64.b64encode(img_file.read()).decode("utf-8")
+
+                user_content.append(
+                    {"type": "input_text", "text": f"Image {img_id} (from slide {slide_idx + 1}):"}
+                )
+                user_content.append(
+                    {
+                        "type": "input_image",
+                        "detail": "low",  # Use low detail to save tokens
+                        "image_url": f"data:image/jpeg;base64,{img_bytes}",
+                    }
+                )
+            except Exception as e:
+                logging.warning(f"Failed to read image {img_path}: {e}")
+                continue
+
     response = await client.responses.create(
         model=SMART_MODEL,
-        input=[
+        input=[  # type: ignore[arg-type]
             {"role": "system", "content": prompt},
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "input_file",
-                        "filename": filename,
-                        "file_data": f"data:application/pdf;base64,{pdf_data}",
-                    },
-                ],
+                "content": user_content,
             },
         ],
         text={"format": {"type": "json_schema", "name": "SpreadsheetResponse", "schema": schema}},
