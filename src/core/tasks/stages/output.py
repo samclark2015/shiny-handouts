@@ -47,7 +47,7 @@ async def generate_output_task(data: dict) -> dict:
     html = template.render(pairs=slides)
 
     await update_job_progress(job_id, stage_name, 0.3, "Generating title")
-    title = await generate_title(html)
+    title = await generate_title(html, user_id=user_id, job_id=job_id)
     await update_job_label(job_id, title)
 
     # Update job with the AI-generated title

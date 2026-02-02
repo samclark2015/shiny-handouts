@@ -169,12 +169,13 @@ async def transform_slides_ai_task(data: dict) -> dict:
     if not ctx.use_ai or not ctx.slides:
         return ctx.to_dict()
 
+    user_id = ctx.user_id
     output = []
     slides = cast(list[dict], ctx.slides)
     total = len(slides)
 
     for idx, slide in enumerate(slides):
-        cleaned = await clean_transcript(slide["caption"])
+        cleaned = await clean_transcript(slide["caption"], user_id=user_id, job_id=job_id)
         output.append(
             {
                 "image": slide["image"],

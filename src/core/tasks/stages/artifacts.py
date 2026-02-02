@@ -51,6 +51,8 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
                 local_pdf,
                 custom_prompt=ctx.spreadsheet_prompt,
                 custom_columns=ctx.spreadsheet_columns,
+                user_id=user_id,
+                job_id=job_id,
             )
 
         if not study_table.rows:
@@ -186,6 +188,8 @@ async def generate_vignette_artifact_task(data: dict) -> dict:
             vignette_data = await generate_vignette_questions(
                 local_pdf,
                 custom_prompt=ctx.vignette_prompt,
+                user_id=user_id,
+                job_id=job_id,
             )
 
         if not vignette_data.learning_objectives:
@@ -248,6 +252,8 @@ async def generate_mindmap_artifact_task(data: dict) -> dict:
             mindmaps = await generate_mindmap(
                 local_pdf,
                 custom_prompt=ctx.mindmap_prompt,
+                user_id=user_id,
+                job_id=job_id,
             )
 
         if not mindmaps:

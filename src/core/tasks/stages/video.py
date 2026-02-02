@@ -102,6 +102,7 @@ async def extract_captions_task(data: dict) -> dict:
 
     ctx = TaskContext.from_dict(data)
     job_id = ctx.job_id
+    user_id = ctx.user_id
     stage_name = "extract_captions"
 
     await update_job_progress(job_id, stage_name, 0, "Extracting captions")
@@ -111,9 +112,9 @@ async def extract_captions_task(data: dict) -> dict:
     # For S3, download video to temp location for caption extraction
     if is_s3_enabled():
         async with temp_download(video_path) as local_video:
-            captions = await generate_captions(local_video)
+            captions = await generate_captions(local_video, user_id=user_id, job_id=job_id)
     else:
-        captions = await generate_captions(video_path)
+        captions = await generate_captions(video_path, user_id=user_id, job_id=job_id)
 
     ctx.captions = [{"text": c.text, "timestamp": c.timestamp} for c in captions]
 

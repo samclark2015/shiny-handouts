@@ -108,29 +108,56 @@ models = await get_model_usage_breakdown(user_id=1, days=30)
 
 ## How It Works
 
-### 1. Context Setting
-When a job starts, the pipeline's `generate_context_task` sets the AI context:
+### 1. Explicit Context Passing
+The `user_id` and `job_id` are passed explicitly through the pipeline context (`TaskContext`) and into each AI function call. This approach works correctly in distributed task queues where context variables cannot propagate across process boundaries.
 
-```python
-from pipeline.ai import set_ai_context
-
-set_ai_context(user_id=user_id, job_id=job_id)
-```
-
-This uses Python's `contextvars` to track context across async calls within the same task.
-
-### 2. Request Tracking
-The `@ai_checkpoint` decorator automatically tracks all AI requests:
+Each AI function accepts `user_id` and `job_id` as optional parameters:
 
 ```python
 @ai_checkpoint
-async def generate_captions(video_path: str) -> list[Caption]:
+async def generate_captions(
+    video_path: str, 
+    user_id: int | None = None, 
+    job_id: int | None = None
+) -> list[Caption]:
     # ... make API call ...
     
-    # Tracking happens automatically
+    # Tracking with explicit IDs
     await track_ai_request(
         function_name="generate_captions",
         model="whisper-1",
+        user_id=user_id,
+        job_id=job_id,
+        prompt_tokens=500,
+        completion_tokens=0,
+        duration_ms=2341,
+    )
+```
+
+Pipeline stages extract these from the `TaskContext` and pass them to AI functions:
+
+```python
+ctx = TaskContext.from_dict(data)
+user_id = ctx.user_id
+job_id = ctx.job_id
+
+captions = await generate_captions(video_path, user_id=user_id, job_id=job_id)
+```
+### 2. Request Tracking
+The `@ai_checkpoint` decorator automatically tracks all AI requests. It extracts `user_id` and `job_id` from the function's keyword arguments and passes them to the tracking function:
+
+```python
+@ai_checkpoint
+async def generate_captions(video_path: str, user_id: int | None = None, job_id: int | None = None):
+    # The decorator extracts user_id and job_id from kwargs
+    # ... make API call ...
+    
+    # Tracking happens with the extracted IDs
+    await track_ai_request(
+        function_name="generate_captions",
+        model="whisper-1",
+        user_id=user_id,  # From kwargs
+        job_id=job_id,     # From kwargs
         prompt_tokens=500,
         completion_tokens=0,
         duration_ms=2341,
