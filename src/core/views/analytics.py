@@ -6,7 +6,7 @@ from asgiref.sync import async_to_sync
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
-from core.analytics import get_model_usage_breakdown, get_user_ai_stats
+from core.analytics import get_function_usage_breakdown, get_user_ai_stats
 
 
 @login_required
@@ -17,11 +17,11 @@ def analytics_dashboard(request):
 
     # Get user statistics (wrap async functions)
     stats = async_to_sync(get_user_ai_stats)(user_id, days=days)
-    model_breakdown = async_to_sync(get_model_usage_breakdown)(user_id, days=days)
+    function_breakdown = async_to_sync(get_function_usage_breakdown)(user_id, days=days)
 
     context = {
         "stats": stats,
-        "model_breakdown": model_breakdown,
+        "function_breakdown": function_breakdown,
         "days": days,
     }
 

@@ -7,6 +7,17 @@ from decimal import Decimal
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
 
+# Mapping of internal function names to user-friendly display names
+FUNCTION_DISPLAY_NAMES = {
+    "generate_captions": "Caption Extraction",
+    "clean_transcript": "Transcript Cleanup",
+    "gen_keypoints": "Keypoint Generation",
+    "generate_title": "Title Generation",
+    "generate_spreadsheet_helper": "Study Table (Excel)",
+    "generate_vignette_questions": "Vignette Questions",
+    "generate_mindmap": "Mindmap Generation",
+}
+
 
 async def get_user_ai_stats(user_id: int, days: int = 30):
     """Get AI usage statistics for a user over the past N days."""
@@ -111,8 +122,8 @@ async def get_daily_ai_usage(user_id: int | None = None, days: int = 30):
     return [s async for s in daily_stats]
 
 
-async def get_model_usage_breakdown(user_id: int | None = None, days: int = 30):
-    """Get usage breakdown by model."""
+async def get_function_usage_breakdown(user_id: int | None = None, days: int = 30):
+    """Get usage breakdown by function name."""
     from datetime import timedelta
 
     from django.utils import timezone
@@ -125,8 +136,8 @@ async def get_model_usage_breakdown(user_id: int | None = None, days: int = 30):
     if user_id:
         queryset = queryset.filter(user_id=user_id)
 
-    model_stats = (
-        queryset.values("model")
+    function_stats = (
+        queryset.values("function_name")
         .annotate(
             requests=Count("id"),
             tokens=Sum("total_tokens"),
@@ -135,4 +146,11 @@ async def get_model_usage_breakdown(user_id: int | None = None, days: int = 30):
         .order_by("-cost")
     )
 
-    return [s async for s in model_stats]
+    # Add display names to the results
+    results = []
+    async for stat in function_stats:
+        function_name = stat["function_name"]
+        stat["display_name"] = FUNCTION_DISPLAY_NAMES.get(function_name, function_name)
+        results.append(stat)
+
+    return results
