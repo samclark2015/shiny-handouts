@@ -3,6 +3,7 @@ Output generation stage tasks (PDF generation and compression).
 """
 
 import asyncio
+import contextlib
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from core.storage import (
     S3Storage,
     get_job_key,
     get_job_local_path,
+    get_storage,
     get_storage_config,
     is_s3_enabled,
     temp_download,
@@ -41,6 +43,32 @@ async def generate_output_task(data: dict) -> dict:
     # Convert slide dicts back to Slide namedtuples for template
     slides = [Slide(**s) for s in ctx.slides] if ctx.slides else []
 
+    # For S3, download images to temp locations for PDF generation
+    temp_files = []
+    if is_s3_enabled() and slides:
+        storage = get_storage()
+        await update_job_progress(job_id, stage_name, 0.1, "Downloading images for PDF")
+
+        slides_with_local_images = []
+        for idx, slide in enumerate(slides):
+            # Download image from S3 to temp location
+            local_path = await storage.download_file(slide.image)
+            temp_files.append(local_path)
+
+            # Create new slide with local path
+            slides_with_local_images.append(
+                Slide(image=local_path, caption=slide.caption, extra=slide.extra)
+            )
+
+            # Update progress
+            if idx % 10 == 0:
+                progress = 0.1 + (idx / len(slides)) * 0.15
+                await update_job_progress(
+                    job_id, stage_name, progress, "Downloading images for PDF"
+                )
+
+        slides = slides_with_local_images
+
     template_path = settings.BASE_DIR / "templates" / "pdf"
     env = Environment(loader=FileSystemLoader(template_path), autoescape=select_autoescape())
     template = env.get_template("template.html")
@@ -59,10 +87,17 @@ async def generate_output_task(data: dict) -> dict:
     os.makedirs(os.path.dirname(local_path), exist_ok=True)
 
     await update_job_progress(job_id, stage_name, 0.5, "Creating PDF")
-    with open(local_path, "wb") as f:
-        pisa_status = pisa.CreatePDF(html, dest=f)
-        if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
-            raise ValueError("Error generating PDF")
+    try:
+        with open(local_path, "wb") as f:
+            pisa_status = pisa.CreatePDF(html, dest=f)
+            if hasattr(pisa_status, "err") and getattr(pisa_status, "err", None):
+                raise ValueError("Error generating PDF")
+    finally:
+        # Clean up temp image files if using S3
+        for temp_file in temp_files:
+            if os.path.exists(temp_file):
+                with contextlib.suppress(Exception):
+                    os.remove(temp_file)
 
     # Upload to S3 if enabled
     if is_s3_enabled():
