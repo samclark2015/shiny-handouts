@@ -3,13 +3,13 @@ Analytics views for AI request tracking and cost analysis.
 """
 
 from asgiref.sync import async_to_sync
-from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from core.analytics import get_model_usage_breakdown, get_user_ai_stats
 
 
-@staff_member_required
+@login_required
 def analytics_dashboard(request):
     """Display AI usage analytics for staff users only."""
     user_id = request.user.id
