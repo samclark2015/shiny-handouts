@@ -12,6 +12,8 @@ from core.analytics import get_all_users_overview, get_function_usage_breakdown,
 @login_required
 def analytics_dashboard(request):
     """Display AI usage analytics - overview for staff, personal for regular users."""
+    from accounts.models import User
+
     days = int(request.GET.get("days", 30))
     selected_user_id = request.GET.get("user_id")
 
@@ -25,7 +27,6 @@ def analytics_dashboard(request):
                 function_breakdown = async_to_sync(get_function_usage_breakdown)(user_id, days=days)
 
                 # Get user info for display
-                from accounts.models import User
 
                 selected_user = User.objects.get(id=user_id)
 

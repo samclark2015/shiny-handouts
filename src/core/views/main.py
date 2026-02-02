@@ -23,8 +23,10 @@ def index(request):
         .order_by("-created_at")[:50]
     )
 
-    # Get user's completed jobs grouped by date
-    completed_jobs = Job.objects.filter(status=JobStatus.COMPLETED).order_by("-created_at")
+    # Get user's completed jobs grouped by date (paginated to last 100 jobs)
+    completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
+        "-created_at"
+    )[:100]
 
     # Group jobs by date
     jobs_by_date = {}
@@ -82,8 +84,12 @@ async def serve_file(request, job_id: int, artifact_id: int):
         if is_s3_enabled():
             return HttpResponseRedirect(url)
         else:
-            return FileResponse(
-                open(url, "rb"),
-                as_attachment=True,
-                filename=os.path.basename(artifact.file_name),
-            )
+            # Use context manager to ensure file handle is properly closed
+            with open(url, "rb") as file_handle:
+                response = FileResponse(
+                    file_handle,
+                    as_attachment=True,
+                    filename=os.path.basename(artifact.file_name),
+                )
+                # FileResponse will close the file when done
+                return response

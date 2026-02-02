@@ -160,7 +160,6 @@ async def get_all_users_overview(days: int = 30):
     """Get overview of all users' AI usage and costs."""
     from datetime import timedelta
 
-    from django.conf import settings
     from django.utils import timezone
 
     from .models import AIRequest

@@ -158,6 +158,12 @@ class Job(models.Model):
         ordering = ["-created_at"]
         verbose_name = "job"
         verbose_name_plural = "jobs"
+        indexes = [
+            # Composite index for common query patterns
+            models.Index(fields=["user", "status", "-created_at"]),
+            models.Index(fields=["user", "-created_at"]),
+            models.Index(fields=["status", "-created_at"]),
+        ]
 
     def __str__(self):
         return f"Job {self.pk} - {self.label} ({self.status})"

@@ -364,6 +364,10 @@ django-extensions==4.1 \
     --hash=sha256:0699a7af28f2523bf8db309a80278519362cd4b6e1fd0a8cd4bf063e1e023336 \
     --hash=sha256:7b70a4d28e9b840f44694e3f7feb54f55d495f8b3fa6c5c0e5e12bcb2aa3cdeb
     # via shiny-handouts
+django-ratelimit==4.1.0 \
+    --hash=sha256:555943b283045b917ad59f196829530d63be2a39adb72788d985b90c81ba808b \
+    --hash=sha256:d047a31cf94d83ef1465d7543ca66c6fc16695559b5f8d814d1b51df15110b92
+    # via shiny-handouts
 django-stubs==5.2.9 \
     --hash=sha256:2317a7130afdaa76f6ff7f623650d7f3bf1b6c86a60f95840e14e6ec6de1a7cd \
     --hash=sha256:c192257120b08785cfe6f2f1c91f1797aceae8e9daa689c336e52c91e8f6a493
@@ -1273,6 +1277,10 @@ taskiq-pipelines==0.1.4 \
 taskiq-redis==1.1.2 \
     --hash=sha256:3b69468ff99da33243314c84acfa137a4a014abad10dd44e62195bc5e4ae9947 \
     --hash=sha256:f878a047abc1a0fa0ddda6e4b063d742f030858d5a4409de96261a00a992c9c9
+    # via shiny-handouts
+tenacity==9.1.2 \
+    --hash=sha256:1169d376c297e7de388d18b4481760d478b0e99a777cad3a9c86e556f4b697cb \
+    --hash=sha256:f77bf36710d8b73a50b2dd155c97b870017ad21afe6ab300326b0371b3b05138
     # via shiny-handouts
 tifffile==2025.6.11 \
     --hash=sha256:0ece4c2e7a10656957d568a093b07513c0728d30c1bd8cc12725901fffdb7143 \

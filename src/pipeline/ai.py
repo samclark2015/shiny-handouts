@@ -10,8 +10,14 @@ from pathlib import Path
 from typing import cast
 
 from django.conf import settings
-from openai import AsyncOpenAI
+from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 from pydub import AudioSegment
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from core.cache import get_ai_cached_result, set_ai_cached_result
 
@@ -142,6 +148,12 @@ def ai_checkpoint(func):
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def generate_captions(
     video_path: str, user_id: int | None = None, job_id: int | None = None
 ) -> list[Caption]:
@@ -186,6 +198,12 @@ async def generate_captions(
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def clean_transcript(
     content: str, user_id: int | None = None, job_id: int | None = None
 ) -> str:
@@ -218,6 +236,12 @@ async def clean_transcript(
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def gen_keypoints(
     content: str, slide_path: str, user_id: int | None = None, job_id: int | None = None
 ) -> str:
@@ -269,6 +293,12 @@ async def gen_keypoints(
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def generate_title(html: str, user_id: int | None = None, job_id: int | None = None) -> str:
     start_time = time.time()
     prompt = read_prompt("generate_title")
@@ -334,6 +364,12 @@ def _build_column_schema(columns: list[dict] | None) -> dict:
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def generate_spreadsheet_helper(
     filename: str,
     custom_prompt: str | None = None,
@@ -399,6 +435,12 @@ async def generate_spreadsheet_helper(
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def generate_vignette_questions(
     filename: str,
     custom_prompt: str | None = None,
@@ -460,6 +502,12 @@ async def generate_vignette_questions(
 
 
 @ai_checkpoint
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIError, APITimeoutError, RateLimitError)),
+    reraise=True,
+)
 async def generate_mindmap(
     filename: str,
     custom_prompt: str | None = None,

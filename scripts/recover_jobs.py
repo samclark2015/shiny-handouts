@@ -169,7 +169,7 @@ def create_job_and_artifacts(
 
         file_size = file_path.stat().st_size if file_path.exists() else None
 
-        artifact = Artifact.objects.create(
+        Artifact.objects.create(
             job=job,
             artifact_type=artifact_type,
             file_path=file_path.name,

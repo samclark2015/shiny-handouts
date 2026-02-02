@@ -19,6 +19,7 @@ from django.http import HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django_ratelimit.decorators import ratelimit
 
 from core.models import Job, JobStatus
 
@@ -30,9 +31,10 @@ REPO = os.getenv("REPO", "")
 
 @require_POST
 @login_required
+@ratelimit(key="user", rate="10/h", method="POST", block=True)
 def upload_file(request):
     """Handle file upload and start processing."""
-    from core.storage import is_s3_enabled, sync_upload_file
+    from core.storage import get_job_path, get_storage, is_s3_enabled
 
     if "file" not in request.FILES:
         return render(request, "partials/error.html", {"message": "No file provided"}, status=400)
@@ -56,12 +58,6 @@ def upload_file(request):
         for chunk in file.chunks():
             destination.write(chunk)
 
-    # Upload to S3 if enabled, otherwise use local path
-    if is_s3_enabled():
-        storage_path = sync_upload_file(local_path, "input", filename)
-    else:
-        storage_path = local_path
-
     # Get setting profile if specified
     from accounts.models import SettingProfile
 
@@ -70,17 +66,30 @@ def upload_file(request):
         with contextlib.suppress(ValueError, SettingProfile.DoesNotExist):
             setting_profile = SettingProfile.objects.get(id=int(profile_id), user=request.user)
 
-    # Create job record
+    # Create job record first to get job ID
     job = Job.objects.create(
         user=request.user,
         label=filename,
         status=JobStatus.PENDING,
         input_type="upload",
-        input_data=json.dumps({"path": storage_path, "filename": filename}),
+        input_data=json.dumps({"path": local_path, "filename": filename}),
         enable_excel=enable_excel,
         enable_vignette=enable_vignette,
         setting_profile=setting_profile,
     )
+
+    # Upload to proper storage using job ID
+    if is_s3_enabled():
+        storage = get_storage()
+        storage_path = get_job_path(request.user.pk, job.pk, filename)
+        # Use async_to_sync for the async upload method
+        storage_path = async_to_sync(storage.upload_file)(local_path, storage_path)
+        # Update job with final storage path
+        job.input_data = json.dumps({"path": storage_path, "filename": filename})
+        job.save(update_fields=["input_data"])
+        # Clean up local temp file
+        if os.path.exists(local_path):
+            os.remove(local_path)
 
     # Start the pipeline asynchronously
     from core.tasks import start_pipeline
@@ -94,6 +103,7 @@ def upload_file(request):
 
 @require_POST
 @login_required
+@ratelimit(key="user", rate="10/h", method="POST", block=True)
 def process_url(request):
     """Handle URL submission and start processing."""
     video_url = request.POST.get("url", "").strip()
@@ -141,6 +151,7 @@ def process_url(request):
 
 @require_POST
 @login_required
+@ratelimit(key="user", rate="10/h", method="POST", block=True)
 def process_panopto(request):
     """Handle Panopto submission and start processing."""
     panopto_url = request.POST.get("url", "").strip()

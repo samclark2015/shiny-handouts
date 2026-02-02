@@ -7,7 +7,7 @@ import os
 
 from asgiref.sync import sync_to_async
 
-from core.storage import get_file_size, is_s3_enabled
+from core.storage import get_storage, is_s3_enabled
 
 
 async def create_artifact(job_id: int, artifact_type, file_path: str) -> None:
@@ -29,8 +29,9 @@ async def create_artifact(job_id: int, artifact_type, file_path: str) -> None:
 
     try:
         # Get file size (works for both local and S3)
+        storage = get_storage()
         try:
-            file_size = await get_file_size(file_path)
+            file_size = await storage.get_file_size(file_path)
         except Exception:
             file_size = 0
 

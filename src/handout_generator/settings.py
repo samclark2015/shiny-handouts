@@ -7,6 +7,8 @@ Loads configuration from environment variables with sensible defaults.
 import os
 from pathlib import Path
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -80,38 +82,16 @@ WSGI_APPLICATION = "handout_generator.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///db.sqlite3")
-
-# Parse DATABASE_URL
-if DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-
-if DATABASE_URL.startswith("postgresql://"):
-    # Parse PostgreSQL URL
-    import urllib.parse
-
-    url = urllib.parse.urlparse(DATABASE_URL)
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": url.path[1:],
-            "USER": url.username,
-            "PASSWORD": url.password,
-            "HOST": url.hostname,
-            "PORT": url.port or 5432,
-        }
-    }
-else:
-    # SQLite fallback
-    db_path = DATABASE_URL.replace("sqlite:///", "")
-    if not os.path.isabs(db_path):
-        db_path = BASE_DIR.parent / "data" / "db.sqlite3"
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": db_path,
-        }
-    }
+# Use dj-database-url for DATABASE_URL parsing
+# Defaults to SQLite in data directory if not specified
+default_db_path = str(BASE_DIR.parent / "data" / "db.sqlite3")
+DATABASES = {
+    "default": dj_database_url.config(
+        default=f"sqlite:///{default_db_path}",
+        conn_max_age=600,  # Connection pooling for performance
+        conn_health_checks=True,  # Ensure connections are healthy
+    )
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

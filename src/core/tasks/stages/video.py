@@ -4,7 +4,7 @@ Video download and caption extraction stage tasks.
 
 import os
 
-from core.storage import file_exists, get_source_local_path, get_source_path, is_s3_enabled
+from core.storage import get_source_local_path, get_source_path, get_storage, is_s3_enabled
 from core.tasks.config import broker
 from core.tasks.context import TaskContext
 from core.tasks.db import update_job_source_info
@@ -29,11 +29,12 @@ async def download_video_task(data: dict) -> dict:
 
     await update_job_progress(job_id, stage_name, 0, "Checking video")
 
+    storage = get_storage()
     # For uploads, handle the path from input_data
     if ctx.input_type == "upload":
         upload_path = ctx.input_data.get("path", "")
         # Check if file exists (local or S3)
-        if upload_path and await file_exists(upload_path):
+        if upload_path and await storage.file_exists(upload_path):
                 ctx.video_path = upload_path
                 await update_job_progress(job_id, stage_name, 1.0, "Video ready")
                 return ctx.to_dict()
@@ -42,7 +43,7 @@ async def download_video_task(data: dict) -> dict:
     video_filename = "video.mp4"
     storage_path = get_source_path(user_id, ctx.source_id, video_filename)
 
-    if await file_exists(storage_path):
+    if await storage.file_exists(storage_path):
         ctx.video_path = storage_path
         await update_job_progress(job_id, stage_name, 1.0, "Video ready (reused)")
         return ctx.to_dict()
@@ -89,8 +90,6 @@ async def download_video_task(data: dict) -> dict:
     await update_job_source_info(job_id, ctx.source_id, video_path=ctx.video_path)
 
     await update_job_progress(job_id, stage_name, 1.0, "Video downloaded")
-
-    return ctx.to_dict()
 
     return ctx.to_dict()
 
