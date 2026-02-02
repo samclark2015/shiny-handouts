@@ -73,13 +73,13 @@ async def download_video_task(data: dict) -> dict:
 
     # Upload to S3 if enabled
     if is_s3_enabled():
-        from core.storage import get_s3_client, get_source_key, get_storage_config
+        from core.storage import S3Storage, get_source_key, get_storage_config
 
         config = get_storage_config()
+        storage = S3Storage(config)
         s3_key = get_source_key(user_id, ctx.source_id, video_filename)
 
-        async with get_s3_client() as s3:
-            await s3.upload_file(local_video_path, config.bucket_name, s3_key)
+        await storage.upload_file(local_video_path, s3_key)
 
         ctx.video_path = s3_key
     else:

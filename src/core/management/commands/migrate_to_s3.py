@@ -9,7 +9,6 @@ using the new user-based directory structure:
 """
 
 import asyncio
-import mimetypes
 import os
 from pathlib import Path
 
@@ -17,7 +16,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from core.models import Artifact, Job
-from core.storage import get_job_key, get_s3_client, get_source_key, get_storage_config
+from core.storage import S3Storage, get_job_key, get_source_key, get_storage_config
 
 
 class Command(BaseCommand):
@@ -387,13 +386,6 @@ class Command(BaseCommand):
     async def _upload_file(self, local_path: str, s3_key: str) -> None:
         """Upload a file to S3 with the given key."""
         config = get_storage_config()
-        content_type, _ = mimetypes.guess_type(local_path)
-
-        async with get_s3_client() as s3:
-            extra_args = {}
-            if content_type:
-                extra_args["ContentType"] = content_type
-
-            await s3.upload_file(
-                local_path, config.bucket_name, s3_key, ExtraArgs=extra_args or None
-            )
+        storage = S3Storage(config)
+        
+        await storage.upload_file(local_path, s3_key)

@@ -13,9 +13,9 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from xhtml2pdf import pisa
 
 from core.storage import (
+    S3Storage,
     get_job_key,
     get_job_local_path,
-    get_s3_client,
     get_storage_config,
     is_s3_enabled,
     temp_download,
@@ -67,15 +67,14 @@ async def generate_output_task(data: dict) -> dict:
     # Upload to S3 if enabled
     if is_s3_enabled():
         config = get_storage_config()
+        storage = S3Storage(config)
         s3_key = get_job_key(user_id, job_id, pdf_filename)
 
-        async with get_s3_client() as s3:
-            await s3.upload_file(
-                local_path,
-                config.bucket_name,
-                s3_key,
-                ExtraArgs={"ContentType": "application/pdf"},
-            )
+        await storage.upload_file(
+            local_path,
+            s3_key,
+            content_type="application/pdf",
+        )
 
         storage_path = s3_key
     else:
@@ -120,15 +119,14 @@ async def compress_pdf_task(data: dict) -> dict:
             if compressed_path:
                 # Re-upload the compressed version
                 config = get_storage_config()
+                storage = S3Storage(config)
                 s3_key = get_job_key(user_id, job_id, pdf_filename)
 
-                async with get_s3_client() as s3:
-                    await s3.upload_file(
-                        compressed_path,
-                        config.bucket_name,
-                        s3_key,
-                        ExtraArgs={"ContentType": "application/pdf"},
-                    )
+                await storage.upload_file(
+                    compressed_path,
+                    s3_key,
+                    content_type="application/pdf",
+                )
 
                 ctx.outputs["pdf_path"] = s3_key
                 pdf_path = s3_key

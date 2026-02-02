@@ -9,7 +9,7 @@ from uuid import uuid4
 import cv2
 
 from core.storage import (
-    get_s3_client,
+    S3Storage,
     get_source_key,
     get_source_local_path,
     get_storage_config,
@@ -128,15 +128,14 @@ async def _process_video_frames(
                 # Upload to S3 if enabled
                 if is_s3_enabled():
                     config = get_storage_config()
+                    storage = S3Storage(config)
                     s3_key = get_source_key(user_id, source_id, frame_filename)
 
-                    async with get_s3_client() as s3:
-                        await s3.upload_file(
-                            local_frame_path,
-                            config.bucket_name,
-                            s3_key,
-                            ExtraArgs={"ContentType": "image/jpeg"},
-                        )
+                    await storage.upload_file(
+                        local_frame_path,
+                        s3_key,
+                        content_type="image/jpeg",
+                    )
 
                     image_path = s3_key
                 else:
