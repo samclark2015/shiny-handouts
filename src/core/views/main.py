@@ -8,11 +8,7 @@ from django.http import FileResponse, Http404, HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
 
 from core.models import Artifact, ArtifactType, Job, JobStatus
-from core.storage import (
-    download_bytes,
-    generate_presigned_url,
-    is_s3_enabled,
-)
+from core.storage import download_bytes, generate_presigned_url, is_s3_enabled
 
 
 @login_required
@@ -28,9 +24,7 @@ def index(request):
     )
 
     # Get user's completed jobs grouped by date
-    completed_jobs = Job.objects.filter(user=request.user, status=JobStatus.COMPLETED).order_by(
-        "-created_at"
-    )
+    completed_jobs = Job.objects.filter(status=JobStatus.COMPLETED).order_by("-created_at")
 
     # Group jobs by date
     jobs_by_date = {}
