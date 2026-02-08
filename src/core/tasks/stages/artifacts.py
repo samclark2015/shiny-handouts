@@ -27,23 +27,27 @@ from pipeline.helpers import parse_markdown_bold_to_rich_text
 
 
 async def _prepare_images_for_llm(
-    extracted_images: list[dict] | None,
+    slides: list[dict] | None,
     temp_dir: str,
 ) -> tuple[list[dict], dict[str, str]]:
-    """Download extracted images and prepare them for LLM.
+    """Download slide images and prepare them for LLM.
+
+    Args:
+        slides: List of slide dicts from match_frames_task with 'image', 'caption', 'extra' keys
+        temp_dir: Temporary directory for downloaded images
 
     Returns:
         Tuple of (images_for_llm, image_id_to_local_path mapping)
     """
-    if not extracted_images:
+    if not slides:
         return [], {}
 
     images_for_llm = []
     id_to_path: dict[str, str] = {}
 
-    for idx, img_data in enumerate(extracted_images):
+    for idx, slide_data in enumerate(slides):
         img_id = f"img_{idx:03d}"
-        img_path = img_data.get("path", "")
+        img_path = slide_data.get("image", "")
 
         if not img_path:
             continue
@@ -60,8 +64,12 @@ async def _prepare_images_for_llm(
             else:
                 local_path = img_path
 
-            # Update the image data with local path
-            img_for_llm = {**img_data, "path": local_path}
+            # Create image data for LLM with local path and slide metadata
+            img_for_llm = {
+                "path": local_path,
+                "caption": slide_data.get("caption", ""),
+                "extra": slide_data.get("extra"),
+            }
             images_for_llm.append(img_for_llm)
             id_to_path[img_id] = local_path
 
@@ -175,10 +183,8 @@ async def generate_spreadsheet_artifact_task(data: dict) -> dict:
     try:
         # Create temp directory for image processing
         with TemporaryDirectory() as temp_dir:
-            # Prepare extracted images for LLM
-            images_for_llm, image_id_to_path = await _prepare_images_for_llm(
-                ctx.extracted_images, temp_dir
-            )
+            # Prepare slide images for LLM (from match_frames_task)
+            images_for_llm, image_id_to_path = await _prepare_images_for_llm(ctx.slides, temp_dir)
 
             # Download PDF if on S3 for AI processing
             async with temp_download(pdf_path) as local_pdf:

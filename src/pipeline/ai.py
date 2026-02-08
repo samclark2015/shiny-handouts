@@ -31,7 +31,7 @@ client = AsyncOpenAI(api_key=key)
 MODEL_PRICING = {
     "gpt-4.1-nano": (0.10, 0.40),  # Input, Output pricing
     "gpt-5-mini": (0.25, 2.00),  # Input, Output pricing
-    "whisper-1": (0, 0.006),  # Per minute pricing
+    "whisper-1": 0.006,  # Per minute pricing
 }
 
 
@@ -39,6 +39,12 @@ def calculate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> De
     """Calculate estimated cost for an API call."""
     if model not in MODEL_PRICING:
         return Decimal("0.00")
+
+    if isinstance(MODEL_PRICING[model], float):
+        # Whisper pricing (per minute)
+        per_minute_price = MODEL_PRICING[model]
+        total_minutes = Decimal(str(completion_tokens))
+        return total_minutes * Decimal(str(per_minute_price))
 
     input_price, output_price = MODEL_PRICING[model]
     input_cost = Decimal(str(prompt_tokens)) * Decimal(str(input_price)) / Decimal("1000000")
@@ -346,7 +352,7 @@ def _build_column_schema(columns: list[dict] | None, include_images: bool = Fals
         properties["image_ids"] = {
             "type": "array",
             "items": {"type": "string"},
-            "description": "List of image IDs (e.g., 'img_001', 'img_002') from the provided images that are relevant to this row. Include images showing histology, pathology, clinical findings, or diagrams for this specific condition. Leave empty if no relevant images.",
+            "description": "List of image IDs (e.g., 'img_001', 'img_002') from the provided images that are relevant to this row. Include images showing histology, pathology, clinical findings, or diagrams for this specific condition. Leave empty if no relevant images. Ensure each provided image is inserted at least once.",
         }
 
     required_fields = [*names, "image_ids"] if include_images else names
