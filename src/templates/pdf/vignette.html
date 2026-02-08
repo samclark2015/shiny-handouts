@@ -1,0 +1,149 @@
+<html>
+    <head>
+        <title>Vignette Questions</title>
+        <style>
+            @page {
+                size: letter portrait;
+                margin: 0.5in;
+            }
+            body {
+                font-family: Arial, sans-serif;
+                font-size: 10pt;
+                line-height: 1.3;
+            }
+            h1 {
+                font-size: 14pt;
+                font-weight: bold;
+                margin-bottom: 8pt;
+                border-bottom: 1pt solid #000;
+                padding-bottom: 4pt;
+            }
+            .learning-objective {
+                font-weight: bold;
+                font-size: 10pt;
+                margin: 10pt 0 6pt 0;
+            }
+            .question-block {
+                margin-bottom: 12pt;
+                page-break-inside: avoid;
+            }
+            .question-header {
+                font-weight: bold;
+                margin-bottom: 4pt;
+                font-size: 9pt;
+            }
+            .vignette {
+                margin-bottom: 6pt;
+                text-align: justify;
+            }
+            .question-text {
+                font-weight: bold;
+                margin-bottom: 6pt;
+            }
+            .choices {
+                margin-left: 12pt;
+                margin-bottom: 4pt;
+            }
+            .choice {
+                margin-bottom: 2pt;
+            }
+            .choice-letter {
+                font-weight: bold;
+                margin-right: 6pt;
+            }
+            .answer-key-page {
+                page-break-before: always;
+            }
+            .answer-key-title {
+                font-size: 14pt;
+                font-weight: bold;
+                margin-bottom: 10pt;
+                border-bottom: 1pt solid #000;
+                padding-bottom: 4pt;
+            }
+            .answer-key-section {
+                margin-bottom: 12pt;
+            }
+            .answer-key-objective {
+                font-weight: bold;
+                font-size: 10pt;
+                margin-bottom: 6pt;
+            }
+            .answer-item {
+                margin-bottom: 8pt;
+                margin-left: 12pt;
+            }
+            .answer-header {
+                font-weight: bold;
+                margin-bottom: 2pt;
+            }
+            .answer-letter {
+                font-weight: bold;
+            }
+            .answer-explanation {
+                font-size: 9pt;
+                margin-top: 2pt;
+                margin-left: 6pt;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>Step 1-Style Vignette Questions</h1>
+        
+        {% for lo in learning_objectives %}
+        {% set lo_index = loop.index %}
+        <div class="learning-objective">
+            Learning Objective {{ lo_index }}: {{ lo.objective }}
+        </div>
+        
+        {% for question in lo.questions %}
+        <div class="question-block">
+            <div class="question-header">
+                Q{{ question.question_number }}
+            </div>
+            
+            <div class="vignette">
+                {{ question.vignette }}
+            </div>
+            
+            <div class="question-text">
+                {{ question.question }}
+            </div>
+            
+            <div class="choices">
+                <div class="choice"><span class="choice-letter">A.</span> {{ question.choices.A }}</div>
+                <div class="choice"><span class="choice-letter">B.</span> {{ question.choices.B }}</div>
+                <div class="choice"><span class="choice-letter">C.</span> {{ question.choices.C }}</div>
+                <div class="choice"><span class="choice-letter">D.</span> {{ question.choices.D }}</div>
+                <div class="choice"><span class="choice-letter">E.</span> {{ question.choices.E }}</div>
+            </div>
+        </div>
+        {% endfor %}
+        {% endfor %}
+
+        <!-- Answer Key on Separate Page -->
+        <div class="answer-key-page">
+            <h1 class="answer-key-title">Answer Key</h1>
+            
+            {% for lo in learning_objectives %}
+            {% set lo_index = loop.index %}
+            <div class="answer-key-section">
+                <div class="answer-key-objective">
+                    Learning Objective {{ lo_index }}: {{ lo.objective }}
+                </div>
+                
+                {% for question in lo.questions %}
+                <div class="answer-item">
+                    <div class="answer-header">
+                        Q{{ question.question_number }}: <span class="answer-letter">{{ question.correct_answer }}</span>
+                    </div>
+                    <div class="answer-explanation">
+                        {{ question.explanation }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </body>
+</html>

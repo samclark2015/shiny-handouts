@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Handout Generator - Dashboard{% endblock %}
+
+{% block body %}
+<!-- Header -->
+<header class="bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
+        <h1 class="text-2xl font-bold text-gray-900">Lecture Handouts</h1>
+        <div class="flex items-center space-x-4">
+            <span class="text-gray-600">{{ user.name }}</span>
+            <a href="{% url 'auth:profiles' %}"
+               class="bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-list-check mr-1"></i>Profiles
+            </a>
+            <a href="{% url 'analytics_dashboard' %}" 
+               class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                <i class="fa-solid fa-chart-line mr-1"></i>Usage
+            </a>
+            {% if user.is_superuser %}
+            <a href="{% url 'admin:index' %}" 
+               class="bg-gray-800 hover:bg-gray-900 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Admin
+            </a>
+            {% endif %}
+            <a href="{% url 'account_logout' %}" 
+               class="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                Logout
+            </a>
+        </div>
+    </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        
+        <!-- Left Column: Upload & Tasks -->
+        <div class="space-y-8">
+            
+            <!-- Upload Card -->
+            <div class="bg-white rounded-lg shadow-md p-6" 
+                 x-data="uploadTabs()" 
+                 x-init="init()">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Generate a Handout</h2>
+                
+                <!-- Tab Navigation -->
+                <div class="border-b border-gray-200 mb-4">
+                    <nav class="-mb-px flex space-x-8">
+                        <button type="button" 
+                                @click="activeTab = 'upload'"
+                                :class="activeTab === 'upload' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
+                            Upload File
+                        </button>
+                        <button type="button"
+                                @click="activeTab = 'url'"
+                                :class="activeTab === 'url' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
+                            Video URL
+                        </button>
+                        <button type="button"
+                                x-show="hasPanopto"
+                                @click="activeTab = 'panopto'"
+                                :class="activeTab === 'panopto' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+                                class="whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm">
+                            Panopto
+                        </button>
+                    </nav>
+                </div>
+                
+                <!-- Upload Tab -->
+                <div x-show="activeTab === 'upload'">
+                    <form hx-post="{% url 'api:upload_file' %}"
+                          hx-target="#job-list"
+                          hx-swap="afterbegin"
+                          hx-on::after-request="if(event.detail.successful) { this.reset(); $dispatch('file-reset'); htmx.trigger('body', 'newJob'); }"
+                          hx-encoding="multipart/form-data"
+                          class="space-y-4"
+                          x-data="{ fileName: '', hasFile: false }"
+                          @file-reset.window="fileName = ''; hasFile = false">
+                        {% csrf_token %}
+                        
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors">
+                            <input type="file" 
+                                   name="file" 
+                                   id="file-upload"
+                                   accept=".mp4,.mov,.avi,.mkv"
+                                   class="hidden"
+                                   required
+                                   @change="fileName = $event.target.files[0]?.name || ''; hasFile = $event.target.files.length > 0">
+                            <label for="file-upload" class="cursor-pointer">
+                                <i class="fa-solid fa-cloud-arrow-up mx-auto text-5xl text-gray-400"></i>
+                                <p class="mt-2 text-sm text-gray-600">
+                                    <span class="text-blue-600 hover:text-blue-500">Click to upload</span> or drag and drop
+                                </p>
+                                <p class="text-xs text-gray-500">MP4, MOV, AVI, MKV up to 2GB</p>
+                            </label>
+                            <p x-show="hasFile" x-text="fileName" class="mt-2 text-sm text-gray-800 font-medium"></p>
+                        </div>
+                        
+                        {% include "partials/output_options.html" %}
+                        
+                        <button type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                :disabled="!hasFile">
+                            <span class="htmx-indicator">
+                                <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
+                            </span>
+                            Generate Handout
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- URL Tab -->
+                <div x-show="activeTab === 'url'" style="display: none;">
+                    <form hx-post="{% url 'api:process_url' %}"
+                          hx-target="#job-list"
+                          hx-swap="afterbegin"
+                          hx-on::after-request="htmx.trigger('body', 'newJob')"
+                          class="space-y-4">
+                        {% csrf_token %}
+                        
+                        <div>
+                            <label for="video-url" class="block text-sm font-medium text-gray-700 mb-1">Video URL</label>
+                            <input type="url" 
+                                   name="url" 
+                                   id="video-url"
+                                   placeholder="https://example.com/video.mp4"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                   required>
+                        </div>
+                        
+                        {% include "partials/output_options.html" %}
+                        
+                        <button type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors">
+                            <span class="htmx-indicator">
+                                <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
+                            </span>
+                            Generate Handout
+                        </button>
+                    </form>
+                </div>
+                
+                <!-- Panopto Tab -->
+                <div x-show="activeTab === 'panopto'" style="display: none;">
+                    <form hx-post="{% url 'api:process_panopto' %}"
+                          hx-target="#job-list"
+                          hx-swap="afterbegin"
+                          hx-on::after-request="if(event.detail.successful) { window.location.href = window.location.pathname; }"
+                          class="space-y-4">
+                        {% csrf_token %}
+                        
+                        <input type="hidden" name="url" :value="panoptoUrl">
+                        <input type="hidden" name="cookie" :value="panoptoCookie">
+                        
+                        <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+                            <div class="flex items-start">
+                                <i class="fa-solid fa-video text-blue-600 mt-1 mr-3"></i>
+                                <div class="flex-1">
+                                    <h3 class="text-sm font-medium text-blue-900 mb-1">Panopto Lecture Supplied</h3>
+                                    <p class="text-sm text-blue-700" x-text="panoptoUrl || 'Loading...'"></p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        {% include "partials/output_options.html" %}
+                        
+                        <button type="submit" 
+                                class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                :disabled="!hasPanopto">
+                            <span class="htmx-indicator">
+                                <i class="fa-solid fa-spinner fa-spin -ml-1 mr-2 text-white"></i>
+                            </span>
+                            Generate Handout
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Active Jobs Card -->
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-gray-900">Active Jobs</h2>
+                    <button hx-get="{% url 'api:get_jobs' %}"
+                            hx-target="#job-list"
+                            hx-swap="innerHTML"
+                            class="text-sm text-blue-600 hover:text-blue-800">
+                        Refresh
+                    </button>
+                </div>
+                
+                <div id="job-list" 
+                     hx-get="{% url 'api:get_jobs' %}"
+                     hx-trigger="newJob from:body"
+                     hx-swap="innerHTML"
+                     class="space-y-3">
+                    {% for job in jobs %}
+                        {% include "partials/job_card.html" %}
+                    {% empty %}
+                        <p class="text-gray-500 text-center py-4">No active jobs</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Right Column: File Browser -->
+        <div class="bg-white rounded-lg shadow-md p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-900">Generated Files</h2>
+                <button hx-get="{% url 'api:get_files' %}"
+                        hx-target="#file-browser"
+                        hx-swap="innerHTML"
+                        class="text-sm text-blue-600 hover:text-blue-800">
+                    Refresh
+                </button>
+            </div>
+            
+            <div id="file-browser" 
+                 hx-get="{% url 'api:get_files' %}"
+                 hx-trigger="jobCompleted from:body"
+                 hx-swap="innerHTML"
+                 class="file-tree">
+                {% include "partials/file_browser.html" %}
+            </div>
+        </div>
+    </div>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // File browser state preservation for HTMX updates
+    let fileBrowserState = new Set();
+    
+    document.body.addEventListener('htmx:beforeSwap', (event) => {
+        if (event.detail.target.id === 'file-browser') {
+            fileBrowserState.clear();
+            event.detail.target.querySelectorAll('details[open]').forEach(details => {
+                const summary = details.querySelector('summary');
+                if (summary) fileBrowserState.add(summary.textContent.trim());
+            });
+        }
+    });
+    
+    document.body.addEventListener('htmx:afterSwap', (event) => {
+        if (event.detail.target.id === 'file-browser') {
+            event.detail.target.querySelectorAll('details').forEach(details => {
+                const summary = details.querySelector('summary');
+                if (summary && fileBrowserState.has(summary.textContent.trim())) {
+                    details.open = true;
+                }
+            });
+        }
+    });
+
+    // Alpine component for upload tabs
+    function uploadTabs() {
+        return {
+            activeTab: 'upload',
+            hasPanopto: false,
+            panoptoUrl: '',
+            panoptoCookie: '',
+            
+            init() {
+                const urlParams = new URLSearchParams(window.location.search);
+                const url = urlParams.get('url');
+                const cookie = urlParams.get('cookie');
+                
+                if (url && cookie) {
+                    this.hasPanopto = true;
+                    this.panoptoUrl = url;
+                    this.panoptoCookie = cookie;
+                    this.activeTab = 'panopto';
+                }
+            }
+        };
+    }
+</script>
+{% endblock %}

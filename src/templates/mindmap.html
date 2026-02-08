@@ -1,0 +1,150 @@
+{% extends "base.html" %} 
+{% load static %}
+{% block title %}{{ title }} - Mindmap{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script src="{% static 'js/mindmap-utils.js' %}"></script>
+{% endblock %} {% block body %}
+<div class="mindmap-container" x-data="mindmapViewer()" x-init="init()">
+  <div class="mindmap-header">
+    <h1>{{ title }}</h1>
+    <div class="mindmap-actions">
+      <button @click="window.history.back()" title="Go back">← Back</button>
+      <button @click="downloadPNG()" title="Download as PNG">
+        🖼️ Download PNG
+      </button>
+    </div>
+  </div>
+
+  <div class="mindmap-options centered">
+    {% include "partials/mindmap_theme_selector.html" %}
+
+    <div class="option-group">
+      <label>🔍 Zoom:</label>
+      <button class="zoom-btn" @click="zoomOut()" title="Zoom out">−</button>
+      <span class="range-value" x-text="Math.round(zoom * 100) + '%'"></span>
+      <button class="zoom-btn" @click="zoomIn()" title="Zoom in">+</button>
+    </div>
+
+    <div class="option-group">
+      <button class="reset-btn" @click="resetView()" title="Reset pan & zoom">⟲ Reset View</button>
+    </div>
+
+    <div class="option-group">
+      <label>📏 Padding:</label>
+      <input type="range" min="10" max="100" x-model="padding" step="10" @input="onThemeChange()">
+      <span class="range-value" x-text="padding + 'px'"></span>
+    </div>
+  </div>
+
+  <div class="panzoom-hint">
+    <span>🖱️ Scroll to zoom • Drag to pan</span>
+  </div>
+
+  <div id="mindmap-diagram" 
+       class="mindmap-diagram large panzoom-container" 
+       :class="{ 'dark-bg': theme === 'dark' }"
+       @mousedown="startPan($event)"
+       @mousemove="doPan($event)"
+       @mouseup="endPan()"
+       @mouseleave="endPan()"
+       @wheel.prevent="handleWheel($event)">
+    <div class="panzoom-content" id="panzoom-content" :style="transformStyle">
+      <div class="mermaid" id="mermaid-content">
+        <div style="padding: 2rem; color: #666;">Loading diagram...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const originalMermaidCode = `{{ mermaid_code|escapejs }}`;
+  const mindmapTitle = `{{ title|escapejs }}`;
+
+  function mindmapViewer() {
+    return {
+      theme: 'default',
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      padding: 40,
+      isPanning: false,
+      startX: 0,
+      startY: 0,
+      startPanX: 0,
+      startPanY: 0,
+      minZoom: 0.25,
+      maxZoom: 4,
+
+      get transformStyle() {
+        return `transform: translate(${this.panX}px, ${this.panY}px) scale(${this.zoom})`;
+      },
+
+      init() {
+        MindmapUtils.initMermaid(this.theme, this.padding);
+        MindmapUtils.renderDiagram('mermaid-content', originalMermaidCode, 'mindmap-svg');
+      },
+
+      async onThemeChange() {
+        MindmapUtils.initMermaid(this.theme, this.padding);
+        await MindmapUtils.renderDiagram('mermaid-content', originalMermaidCode, 'mindmap-svg');
+      },
+
+      handleWheel(event) {
+        const delta = event.deltaY > 0 ? -0.1 : 0.1;
+        const newZoom = Math.min(this.maxZoom, Math.max(this.minZoom, this.zoom + delta));
+        
+        // Zoom toward mouse position
+        const rect = event.currentTarget.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+        
+        const zoomRatio = newZoom / this.zoom;
+        this.panX = mouseX - (mouseX - this.panX) * zoomRatio;
+        this.panY = mouseY - (mouseY - this.panY) * zoomRatio;
+        this.zoom = newZoom;
+      },
+
+      zoomIn() {
+        this.zoom = Math.min(this.maxZoom, this.zoom + 0.25);
+      },
+
+      zoomOut() {
+        this.zoom = Math.max(this.minZoom, this.zoom - 0.25);
+      },
+
+      resetView() {
+        this.zoom = 1;
+        this.panX = 0;
+        this.panY = 0;
+      },
+
+      startPan(event) {
+        if (event.button !== 0) return; // Left click only
+        this.isPanning = true;
+        this.startX = event.clientX;
+        this.startY = event.clientY;
+        this.startPanX = this.panX;
+        this.startPanY = this.panY;
+        event.currentTarget.style.cursor = 'grabbing';
+      },
+
+      doPan(event) {
+        if (!this.isPanning) return;
+        this.panX = this.startPanX + (event.clientX - this.startX);
+        this.panY = this.startPanY + (event.clientY - this.startY);
+      },
+
+      endPan() {
+        this.isPanning = false;
+        const container = document.getElementById('mindmap-diagram');
+        if (container) container.style.cursor = 'grab';
+      },
+
+      downloadPNG() {
+        MindmapUtils.downloadPNG('#mindmap-diagram svg', mindmapTitle + '.png');
+      }
+    };
+  }
+</script>
+{% endblock %}
