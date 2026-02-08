@@ -101,7 +101,7 @@ async def _process_video_frames(
     try:
         for idx, cap in enumerate(captions):
             # Set video position to caption timestamp + 1.5s offset
-            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_500)
+            stream.set(cv2.CAP_PROP_POS_MSEC, cap.timestamp * 1_000 + 500)
             ret, frame = stream.read()
             if not ret:
                 continue
