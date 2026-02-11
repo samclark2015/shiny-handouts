@@ -194,7 +194,7 @@ async def transform_slides_ai_task(data: dict) -> dict:
     total = len(slides)
 
     # Parallelize AI calls with rate limiting
-    MAX_CONCURRENT_AI_CALLS = 5  # Respect OpenAI rate limits
+    MAX_CONCURRENT_AI_CALLS = 2  # Respect OpenAI rate limits
     semaphore = asyncio.Semaphore(MAX_CONCURRENT_AI_CALLS)
     completed_count = 0
 
