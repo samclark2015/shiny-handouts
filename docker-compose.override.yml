@@ -1,0 +1,30 @@
+# Development overrides - automatically merged with docker-compose.yml
+# This file enables hot-reload for local development
+
+services:
+  web:
+    build:
+      context: .
+      args:
+        DEV_MODE: "true"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    command: >
+      sh -c "python /app/manage.py migrate &&
+             python /app/manage.py runserver 0.0.0.0:8000"
+    environment:
+      - DEBUG=1
+
+  taskiq-worker:
+    build:
+      context: .
+      args:
+        DEV_MODE: "true"
+    volumes:
+      - ./data:/app/data
+      - ./src:/app/src
+    command: >
+      python -m taskiq worker core.tasks:broker
+      --workers 2
+      --log-level INFO

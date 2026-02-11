@@ -1,0 +1,1 @@
+"""Handout Generator Django project."""

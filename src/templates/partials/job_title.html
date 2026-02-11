@@ -1,0 +1,61 @@
+{# Job title with inline edit functionality #}
+<span class="job-title-display">
+    {{ job.title|default:job.label }}
+    <button type="button"
+            onclick="editJobTitle({{ job.id }})"
+            class="ml-2 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Rename job">
+        <i class="fa-solid fa-pen text-xs"></i>
+    </button>
+</span>
+<form id="job-title-form-{{ job.id }}"
+      class="job-title-form hidden inline-flex items-center gap-2"
+      hx-post="{% url 'api:rename_job' job.id %}"
+      hx-target="#job-title-{{ job.id }}"
+      hx-swap="innerHTML"
+      onclick="event.stopPropagation()"
+      onkeydown="event.stopPropagation()">
+    {% csrf_token %}
+    <input type="text"
+           name="title"
+           value="{{ job.title|default:job.label }}"
+           class="px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+           required
+           onclick="event.stopPropagation()"
+           onkeydown="event.stopPropagation()">
+    <button type="submit"
+            class="text-green-600 hover:text-green-800"
+            title="Save"
+            onclick="event.stopPropagation()">
+        <i class="fa-solid fa-check"></i>
+    </button>
+    <button type="button"
+            onclick="cancelEditJobTitle({{ job.id }})"
+            class="text-red-600 hover:text-red-800"
+            title="Cancel">
+        <i class="fa-solid fa-xmark"></i>
+    </button>
+</form>
+
+<script>
+function editJobTitle(jobId) {
+    event.stopPropagation();
+    const display = document.querySelector(`#job-title-${jobId} .job-title-display`);
+    const form = document.querySelector(`#job-title-form-${jobId}`);
+    const input = form.querySelector('input[name="title"]');
+    
+    display.classList.add('hidden');
+    form.classList.remove('hidden');
+    input.focus();
+    input.select();
+}
+
+function cancelEditJobTitle(jobId) {
+    event.stopPropagation();
+    const display = document.querySelector(`#job-title-${jobId} .job-title-display`);
+    const form = document.querySelector(`#job-title-form-${jobId}`);
+    
+    form.classList.add('hidden');
+    display.classList.remove('hidden');
+}
+</script>

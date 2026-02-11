@@ -1,0 +1,38 @@
+{# Artifact list partial for a specific job #}
+<div class="space-y-1">
+    {% for artifact in job.artifacts.all %}
+        <div class="flex items-center space-x-2 text-sm p-2 hover:bg-gray-50 rounded">
+            {% if artifact.artifact_type == 'pdf_handout' %}
+                <span class="text-red-600">📄</span>
+            {% elif artifact.artifact_type == 'excel_study_table' %}
+                <span class="text-green-600">📊</span>
+            {% elif artifact.artifact_type == 'pdf_vignette' %}
+                <span class="text-purple-600">📝</span>
+            {% else %}
+                <span>📎</span>
+            {% endif %}
+            
+            <a href="{% url 'main:serve_file' artifact.file_name %}"
+               target="_blank"
+               class="text-blue-600 hover:text-blue-800 hover:underline flex-1">
+                {{ artifact.file_name }}
+            </a>
+            
+            {% if artifact.file_size %}
+                <span class="text-gray-400 text-xs">
+                    {% widthratio artifact.file_size 1048576 1 as size_mb %}
+                    {% widthratio artifact.file_size 1024 1 as size_kb %}
+                    {% if artifact.file_size > 1048576 %}
+                        {{ size_mb }} MB
+                    {% elif artifact.file_size > 1024 %}
+                        {{ size_kb }} KB
+                    {% else %}
+                        {{ artifact.file_size }} B
+                    {% endif %}
+                </span>
+            {% endif %}
+        </div>
+    {% empty %}
+        <p class="text-gray-500 text-sm py-2">No artifacts available</p>
+    {% endfor %}
+</div>
