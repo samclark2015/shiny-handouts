@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -148,6 +149,75 @@ def ai_checkpoint(func):
     return wrapper
 
 
+MAX_WHISPER_SIZE = 24 * 1024 * 1024  # 24MB — conservative limit under OpenAI's 25MB cap
+
+
+def _split_audio_to_chunks(
+    audio: AudioSegment, max_size: int = MAX_WHISPER_SIZE
+) -> list[tuple[BytesIO, float]]:
+    """Split audio into MP3 chunks that each fit under max_size.
+
+    Returns list of (BytesIO, time_offset_seconds) tuples.
+    """
+    # Export full audio to measure actual compressed size
+    full_buf = BytesIO()
+    audio.export(full_buf, format="mp3")
+    full_buf.seek(0, 2)
+    total_size = full_buf.tell()
+    logging.info(f"[generate_captions] Full audio exported size: {total_size} bytes")
+
+    if total_size <= max_size:
+        full_buf.seek(0)
+        full_buf.name = "audio.mp3"
+        logging.info(
+            f"[generate_captions] Full audio size {total_size / 1024 / 1024:.1f}MB fits under limit, using single chunk"
+        )
+        return [(full_buf, 0.0)]
+
+    # Calculate bytes-per-ms from actual export to get accurate chunk durations
+    bytes_per_ms = total_size / len(audio)
+    # Target chunk duration that stays well under the limit
+    chunk_duration_ms = int(max_size / bytes_per_ms * 0.90)  # 10% safety margin
+    num_chunks = (len(audio) // chunk_duration_ms) + 1
+
+    logging.info(
+        f"[generate_captions] Audio is {total_size / 1024 / 1024:.1f}MB, "
+        f"splitting into ~{num_chunks} chunks of ~{chunk_duration_ms / 1000:.0f}s each"
+    )
+
+    chunks: list[tuple[BytesIO, float]] = []
+    offset_ms = 0
+    while offset_ms < len(audio):
+        end_ms = min(offset_ms + chunk_duration_ms, len(audio))
+        chunk = audio[offset_ms:end_ms]
+
+        buf = BytesIO()
+        chunk.export(buf, format="mp3")
+        buf.seek(0, 2)
+        chunk_size = buf.tell()
+
+        if chunk_size > max_size:
+            # Shouldn't happen with the safety margin, but halve the chunk if it does
+            logging.warning(
+                f"[generate_captions] Chunk at {offset_ms}ms is {chunk_size / 1024 / 1024:.1f}MB, "
+                f"halving duration"
+            )
+            chunk_duration_ms = chunk_duration_ms // 2
+            continue  # Retry this offset with smaller chunk
+
+        buf.seek(0)
+        buf.name = f"audio_chunk_{len(chunks)}.mp3"
+        chunks.append((buf, offset_ms / 1000.0))
+        logging.info(
+            f"[generate_captions] Chunk {len(chunks)}: "
+            f"{offset_ms / 1000:.0f}s-{end_ms / 1000:.0f}s, "
+            f"{chunk_size / 1024 / 1024:.1f}MB"
+        )
+        offset_ms = end_ms
+
+    return chunks
+
+
 @ai_checkpoint
 @retry(
     stop=stop_after_attempt(3),
@@ -163,24 +233,28 @@ async def generate_captions(
     video: AudioSegment = AudioSegment.from_file(video_path, format="mp4")
     audio: AudioSegment = video.set_channels(1).set_frame_rate(16000).set_sample_width(2)
 
-    output = BytesIO()
-    audio.export(output, format="mp3")
+    chunks = _split_audio_to_chunks(audio)
 
-    output.seek(0)
-    output.name = "audio.mp3"
-    resp = await client.audio.transcriptions.create(
-        file=output,
-        model="whisper-1",
-        response_format="verbose_json",
-        timestamp_granularities=["segment"],
-        language="en",
-    )
+    async def _transcribe_chunk(buf: BytesIO, time_offset: float) -> list[Caption]:
+        resp = await client.audio.transcriptions.create(
+            file=buf,
+            model="whisper-1",
+            response_format="verbose_json",
+            timestamp_granularities=["segment"],
+            language="en",
+        )
+        segs = resp.segments
+        if not segs:
+            return []
+        return [
+            Caption(text=seg.text, timestamp=seg.start + time_offset) for seg in segs if seg.text
+        ]
 
-    segs = resp.segments
-    if not segs:
+    results = await asyncio.gather(*[_transcribe_chunk(buf, offset) for buf, offset in chunks])
+    captions: list[Caption] = [cap for chunk_caps in results for cap in chunk_caps]
+
+    if not captions:
         raise ValueError("No segments found in the response")
-
-    captions = [Caption(text=seg.text, timestamp=seg.start) for seg in segs if seg.text]
 
     # Track the request (Whisper doesn't return token counts, estimate from duration)
     duration_ms = int((time.time() - start_time) * 1000)
